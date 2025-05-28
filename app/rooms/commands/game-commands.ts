@@ -1556,6 +1556,8 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
   checkForLazyTeam() {
     // force move on board some units if room available
     this.state.players.forEach((player, key) => {
+      if (player.isBot) return
+      
       const teamSize = this.room.getTeamSize(player.board)
       const maxTeamSize = getMaxTeamSize(
         player.experienceManager.level,
