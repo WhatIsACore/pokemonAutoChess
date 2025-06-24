@@ -17,7 +17,10 @@
     "url": "https://github.com/keldaanCommunity/pokemonAutoChess/issues"
   },
   "author": "keldaan-ag",
-  "contributors": ["ogus", "sylvainpolletvillard"],
+  "contributors": [
+    "ogus",
+    "sylvainpolletvillard"
+  ],
   "main": "public/dist/server/app/index.js",
   "scripts": {
     "dev-client": "node esbuild.js --dev",
@@ -90,6 +93,7 @@
     "phaser3-rex-plugins": "^1.80.6",
     "pm2-prom-module-client": "^1.0.3",
     "prom-client": "^15.1.1",
+    "protobufjs": "^7.5.3",
     "react": "^18.2.0",
     "react-circular-progressbar": "^2.1.0",
     "react-dom": "^18.2.0",

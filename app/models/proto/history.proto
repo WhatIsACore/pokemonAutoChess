@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+enum Emotion {
+    NORMAL = 0;
+    HAPPY = 1;
+    PAIN = 2;
+    ANGRY = 3;
+    WORRIED = 4;
+    SAD = 5;
+    CRYING = 6;
+    SHOUTING = 7;
+    TEARY_EYED = 8;
+    DETERMINED = 9;
+    JOYOUS = 10;
+    INSPIRED = 11;
+    SURPRISED = 12;
+    DIZZY = 13;
+    SPECIAL0 = 14;
+    SPECIAL1 = 15;
+    SIGH = 16;
+    STUNNED = 17;
+    SPECIAL2 = 18;
+    SPECIAL3 = 19;
+}
+
+message Pokemon {
+    string avatar = 1;
+    Emotion emotion = 2;
+    repeated string inventory = 3;
+}
+
+message Player {
+    string id = 1;
+    string name = 2;
+    string avatar = 3;
+    Emotion emotion = 4;
+    int32 rank = 5;
+    int32 elo = 6;
+    repeated Pokemon pokemons = 7;
+}
+
+message History {
+    repeated Player players = 1;
+}
