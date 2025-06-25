@@ -9,7 +9,6 @@ import { IGameUser } from "../models/colyseus-models/game-user"
 import Player from "../models/colyseus-models/player"
 import { Pokemon } from "../models/colyseus-models/pokemon"
 import { BotV2 } from "../models/mongo-models/bot-v2"
-import History from "../models/mongo-models/history"
 import HistoryProto from "../models/mongo-models/history-protobuf"
 import UserMetadata, {
   IPokemonCollectionItem
@@ -646,17 +645,17 @@ export default class GameRoom extends Room<GameState> {
 
     // we skip elo compute/game history if game is not finished
     // that is at least two players including one human are still alive
-    // if (playersAlive.length >= 2 && humansAlive.length >= 1) {
-    //   if (humansAlive.length > 1) {
-    //     // this can happen if all players disconnect before the end
-    //     // or if there's another technical issue
-    //     // adding a log just in case
-    //     logger.warn(
-    //       `Game room has been disposed while they were still ${humansAlive.length} players alive.`
-    //     )
-    //   }
-    //   return // game not finished before being disposed, we skip elo compute/game history
-    // }
+    if (playersAlive.length >= 2 && humansAlive.length >= 1) {
+      if (humansAlive.length > 1) {
+        // this can happen if all players disconnect before the end
+        // or if there's another technical issue
+        // adding a log just in case
+        logger.warn(
+          `Game room has been disposed while they were still ${humansAlive.length} players alive.`
+        )
+      }
+      return // game not finished before being disposed, we skip elo compute/game history
+    }
 
     try {
       this.state.endTime = Date.now()
@@ -675,14 +674,6 @@ export default class GameRoom extends Room<GameState> {
       const players: ISimplePlayer[] = [...humans, ...bots].map((p) =>
         this.transformToSimplePlayer(p)
       )
-
-      History.create({
-        id: this.state.preparationId,
-        name: this.state.name,
-        startTime: this.state.startTime,
-        endTime: this.state.endTime,
-        players: humans.map((p) => this.transformToSimplePlayer(p))
-      })
       
       HistoryProto.createEncoded({
         id: this.state.preparationId,

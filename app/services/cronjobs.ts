@@ -2,16 +2,8 @@ import { CronJob } from "cron"
 import dayjs from "dayjs"
 import admin from "firebase-admin"
 import { UserRecord } from "firebase-admin/lib/auth/user-record"
-<<<<<<< HEAD
-import { logger } from "../utils/logger"
 import UserMetadata from "../models/mongo-models/user-metadata"
 import TitleStatistic from "../models/mongo-models/title-statistic"
-=======
-import DetailledStatistic from "../models/mongo-models/detailled-statistic-v2"
-import History from "../models/mongo-models/history"
-import TitleStatistic from "../models/mongo-models/title-statistic"
-import UserMetadata from "../models/mongo-models/user-metadata"
->>>>>>> af96ec5e05dc465f1c5fb2a49e513c4bd1eb90d3
 import { Title } from "../types"
 import {
   CRON_ELO_DECAY_DELAY,
