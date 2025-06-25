@@ -12,6 +12,7 @@ export interface IUserMetadata {
   exp: number
   level: number
   elo: number
+  matchHistory: string[]
   pokemonCollection: Map<string, IPokemonCollectionItem>
   booster: number
   titles: Title[]
@@ -81,6 +82,11 @@ const userMetadataSchema = new Schema({
     {
       type: String,
       enum: Title
+    }
+  ],
+  matchHistory: [
+    {
+      type: String
     }
   ],
   pokemonCollection: {

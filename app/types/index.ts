@@ -303,14 +303,6 @@ export interface IAfterGamePlayer extends ISimplePlayer {
   rerollCount: number
 }
 
-export interface IGameHistorySimplePlayer extends ISimplePlayer {
-  pokemons: IGameHistoryPokemonRecord[]
-}
-
-export interface IGameHistoryPokemonRecord extends IPokemonRecord {
-  inventory: Item[]
-}
-
 export interface IPokemonAvatar {
   id: string
   name: Pkm

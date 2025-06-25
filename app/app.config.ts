@@ -19,6 +19,7 @@ import { connect } from "mongoose"
 import pkg from "../package.json"
 import { initTilemap } from "./core/design"
 import { GameRecord } from "./models/colyseus-models/game-record"
+import HistoryProtobuf from "./models/mongo-models/history-protobuf"
 import DetailledStatistic from "./models/mongo-models/detailled-statistic-v2"
 import Meta from "./models/mongo-models/meta"
 import TitleStatistic from "./models/mongo-models/title-statistic"
@@ -295,30 +296,36 @@ export default config({
       const { page = 1 } = req.query
       const limit = 10
       const skip = (Number(page) - 1) * limit
-
-      const stats = await DetailledStatistic.find(
-        { playerId: playerUid },
-        ["pokemons", "time", "rank", "elo", "gameMode"],
-        { limit: limit, skip: skip, sort: { time: -1 } }
+      
+      const user = await UserMetadata.findOne(
+        { uid: playerUid },
+        [ "matchHistory" ]
       )
-      if (stats) {
-        const records = stats.map(
-          (record) =>
-            new GameRecord(
-              record.time,
-              record.rank,
-              record.elo,
-              record.pokemons,
-              record.gameMode
-            )
+      if (!user || !user.matchHistory) return res.status(200).json([])
+      
+      const matches = await HistoryProtobuf.find(
+        { id: { $in: user.matchHistory } }
+      )
+      .sort({startTime: -1})
+      .skip(skip)
+      .limit(limit)
+      
+      if (!matches) return res.status(404).json([])
+      
+      const records = matches.map(match => {
+        const player = match.players.find(p => p.id === playerUid)
+        if (!player) return null
+        return new GameRecord(
+          match.startTime,
+          player.rank,
+          player.elo,
+          player.pokemons,
+          match.gameMode
         )
+      })
 
-        // Return the records as the response
-        return res.status(200).json(records)
-      }
-
-      // If no records found, return an empty array
-      return res.status(200).json([])
+      // Return the records as the response
+      return res.status(200).json(records)
     })
 
     app.get("/chat-history/:playerUid", async (req, res) => {

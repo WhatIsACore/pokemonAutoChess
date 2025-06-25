@@ -11,6 +11,7 @@ import { Pokemon } from "../models/colyseus-models/pokemon"
 import { BotV2 } from "../models/mongo-models/bot-v2"
 import DetailledStatistic from "../models/mongo-models/detailled-statistic-v2"
 import History from "../models/mongo-models/history"
+import HistoryProto from "../models/mongo-models/history-protobuf"
 import UserMetadata, {
   IPokemonCollectionItem
 } from "../models/mongo-models/user-metadata"
@@ -26,8 +27,6 @@ import {
   IDragDropCombineMessage,
   IDragDropItemMessage,
   IDragDropMessage,
-  IGameHistoryPokemonRecord,
-  IGameHistorySimplePlayer,
   IGameMetadata,
   IPokemon,
   IPokemonEntity,
@@ -36,6 +35,7 @@ import {
   Title,
   Transfer
 } from "../types"
+import { IPokemonRecord } from "../models/colyseus-models/game-record"
 import {
   AdditionalPicksStages,
   ALLOWED_GAME_RECONNECTION_TIME,
@@ -647,17 +647,17 @@ export default class GameRoom extends Room<GameState> {
 
     // we skip elo compute/game history if game is not finished
     // that is at least two players including one human are still alive
-    if (playersAlive.length >= 2 && humansAlive.length >= 1) {
-      if (humansAlive.length > 1) {
-        // this can happen if all players disconnect before the end
-        // or if there's another technical issue
-        // adding a log just in case
-        logger.warn(
-          `Game room has been disposed while they were still ${humansAlive.length} players alive.`
-        )
-      }
-      return // game not finished before being disposed, we skip elo compute/game history
-    }
+    // if (playersAlive.length >= 2 && humansAlive.length >= 1) {
+    //   if (humansAlive.length > 1) {
+    //     // this can happen if all players disconnect before the end
+    //     // or if there's another technical issue
+    //     // adding a log just in case
+    //     logger.warn(
+    //       `Game room has been disposed while they were still ${humansAlive.length} players alive.`
+    //     )
+    //   }
+    //   return // game not finished before being disposed, we skip elo compute/game history
+    // }
 
     try {
       this.state.endTime = Date.now()
@@ -682,6 +682,15 @@ export default class GameRoom extends Room<GameState> {
         name: this.state.name,
         startTime: this.state.startTime,
         endTime: this.state.endTime,
+        players: humans.map((p) => this.transformToSimplePlayer(p))
+      })
+      
+      HistoryProto.createEncoded({
+        id: this.state.preparationId,
+        name: this.state.name,
+        startTime: this.state.startTime,
+        endTime: this.state.endTime,
+        gameMode: this.state.gameMode,
         players: humans.map((p) => this.transformToSimplePlayer(p))
       })
 
@@ -755,6 +764,11 @@ export default class GameRoom extends Room<GameState> {
 
     const usr = await UserMetadata.findOne({ uid: player.id })
     if (usr) {
+      
+      // record the last 30 games
+      if (usr.matchHistory.length >= 30) usr.matchHistory.shift()
+      usr.matchHistory.push(this.state.preparationId)
+      
       if (elligibleToXP) {
         const expThreshold = 1000
         if (usr.exp + exp >= expThreshold) {
@@ -905,8 +919,8 @@ export default class GameRoom extends Room<GameState> {
     }
   }
 
-  transformToSimplePlayer(player: Player): IGameHistorySimplePlayer {
-    const simplePlayer: IGameHistorySimplePlayer = {
+  transformToSimplePlayer(player: Player): ISimplePlayer {
+    const simplePlayer: ISimplePlayer = {
       name: player.name,
       id: player.id,
       rank: player.rank,
@@ -915,7 +929,6 @@ export default class GameRoom extends Room<GameState> {
         name: Pkm
         avatar: string
         items: Item[]
-        inventory: Item[]
       }>(),
       elo: player.elo,
       synergies: [],
@@ -934,15 +947,13 @@ export default class GameRoom extends Room<GameState> {
           pokemon.shiny,
           pokemon.emotion
         )
-        const s: IGameHistoryPokemonRecord = {
+        const s: IPokemonRecord = {
           name: pokemon.name,
           avatar: avatar,
-          items: new Array<Item>(),
-          inventory: new Array<Item>()
+          items: new Array<Item>()
         }
         pokemon.items.forEach((i) => {
           s.items.push(i)
-          s.inventory.push(i)
         })
         simplePlayer.pokemons.push(s)
       }

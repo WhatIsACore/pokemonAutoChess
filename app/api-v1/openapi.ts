@@ -29,19 +29,19 @@ export interface components {
       /** @description the avatar of the pokemon (path including emotes/shiny user configuration) */
       avatar?: string
       /** @description All the items of the pokemons */
-      inventory?: string[]
+      items?: string[]
     }
     GameHistory: {
       /** @description the game id (same as you sent) */
-      id?: string
+      id: string
       /** @description the game name (Name is specified by owner of preparation room) */
-      name?: string
+      name: string
       /** @description the start time of the game (in UNIX Epoch) */
-      startTime?: number
+      startTime: number
       /** @description the end time of the game (in UNIX Epoch) */
-      endTime?: number
+      endTime: number
       /** @description All the game informations related to players */
-      players?: {
+      players: {
         /** @description The player id */
         id?: string
         /** @description The player avatar when the game was played */

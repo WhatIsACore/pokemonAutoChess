@@ -26,7 +26,12 @@ enum Emotion {
 message Pokemon {
     string avatar = 1;
     Emotion emotion = 2;
-    repeated string inventory = 3;
+    repeated string items = 3;
+}
+
+message Synergy {
+    string synergy = 1;
+    int32 level = 2;
 }
 
 message Player {
@@ -37,6 +42,7 @@ message Player {
     int32 rank = 5;
     int32 elo = 6;
     repeated Pokemon pokemons = 7;
+    repeated Synergy synergies = 8;
 }
 
 message History {
