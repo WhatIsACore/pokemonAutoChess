@@ -9,7 +9,6 @@ import { IGameUser } from "../models/colyseus-models/game-user"
 import Player from "../models/colyseus-models/player"
 import { Pokemon } from "../models/colyseus-models/pokemon"
 import { BotV2 } from "../models/mongo-models/bot-v2"
-import DetailledStatistic from "../models/mongo-models/detailled-statistic-v2"
 import History from "../models/mongo-models/history"
 import HistoryProto from "../models/mongo-models/history-protobuf"
 import UserMetadata, {
@@ -841,24 +840,6 @@ export default class GameRoom extends Room<GameState> {
           }
           usr.elo = elo
         }
-
-        const dbrecord = this.transformToSimplePlayer(player)
-        const synergiesMap = new Map<Synergy, number>()
-        player.synergies.forEach((v, k) => {
-          v > 0 && synergiesMap.set(k, v)
-        })
-        DetailledStatistic.create({
-          time: Date.now(),
-          name: dbrecord.name,
-          pokemons: dbrecord.pokemons,
-          rank: dbrecord.rank,
-          nbplayers: humans.length + bots.length,
-          avatar: dbrecord.avatar,
-          playerId: dbrecord.id,
-          elo: elo,
-          synergies: synergiesMap,
-          gameMode: this.state.gameMode
-        })
       }
 
       if (player.life >= 100 && rank === 1) {

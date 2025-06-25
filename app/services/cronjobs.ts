@@ -4,9 +4,7 @@ import admin from "firebase-admin"
 import { UserRecord } from "firebase-admin/lib/auth/user-record"
 import { logger } from "../utils/logger"
 import UserMetadata from "../models/mongo-models/user-metadata"
-import DetailledStatistic from "../models/mongo-models/detailled-statistic-v2"
 import TitleStatistic from "../models/mongo-models/title-statistic"
-import History from "../models/mongo-models/history"
 import { Title } from "../types"
 import {
   CRON_ELO_DECAY_DELAY,
@@ -17,6 +15,7 @@ import {
 } from "../types/Config"
 import { GameMode } from "../types/enum/Game"
 import { min } from "../utils/number"
+import HistoryProtobuf from "../models/mongo-models/history-protobuf"
 
 export function initCronJobs() {
   logger.debug("init cron jobs")
@@ -98,29 +97,22 @@ async function eloDecay() {
   logger.info("[CRON] Computing elo decay...")
   const users = await UserMetadata.find(
     { elo: { $gt: CRON_ELO_DECAY_MINIMUM_ELO } },
-    ["uid", "elo", "displayName"]
+    ["uid", "elo", "displayName", "matchHistory"]
   )
   if (users && users.length > 0) {
     logger.info(`Checking activity of ${users.length} users`)
     for (let i = 0; i < users.length; i++) {
       const u = users[i]
-      const stats = await DetailledStatistic.find(
-        {
-          playerId: u.uid,
-          ...(u.elo >= EloRankThreshold[EloRank.ULTRA_BALL] &&
-          Date.now() > new Date("2025-05-05").getTime()
-            ? { gameMode: GameMode.RANKED } // TEMP: activate ranked mode decay after 15 days to let time to collect the new game mode info. Can be safely removed after that date
-            : {})
-        },
-        ["time"],
-        {
-          limit: 3,
-          sort: { time: -1 }
-        }
-      )
+      const matchHistory = u.matchHistory || []
+      const stats = await HistoryProtobuf.find({
+        id: { $in: matchHistory },
+        gameMode: GameMode.RANKED
+      })
+      .sort({ startTime: -1 })
+      .limit(3)
 
       const shouldDecay =
-        stats.length < 3 || Date.now() - stats[2].time > CRON_ELO_DECAY_DELAY
+        stats.length < 3 || Date.now() - stats[2].startTime > CRON_ELO_DECAY_DELAY
 
       if (shouldDecay) {
         const eloAfterDecay = min(CRON_ELO_DECAY_MINIMUM_ELO)(u.elo - 10)
@@ -151,12 +143,8 @@ async function titleStats() {
 
 async function deleteOldHistory() {
   logger.info("[CRON] Deleting 4 weeks old games...")
-  const deleteResults = await DetailledStatistic.deleteMany({
-    time: { $lt: Date.now() - CRON_HISTORY_CLEANUP_DELAY }
-  })
-  logger.info(`${deleteResults.deletedCount} detailed statistics deleted`)
-
-  const historyResults = await History.deleteMany({
+  
+  const historyResults = await HistoryProtobuf.deleteMany({
     startTime: { $lt: Date.now() - CRON_HISTORY_CLEANUP_DELAY }
   })
   logger.info(`${historyResults.deletedCount} game histories deleted`)

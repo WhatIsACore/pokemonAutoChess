@@ -20,7 +20,6 @@ import pkg from "../package.json"
 import { initTilemap } from "./core/design"
 import { GameRecord } from "./models/colyseus-models/game-record"
 import HistoryProtobuf from "./models/mongo-models/history-protobuf"
-import DetailledStatistic from "./models/mongo-models/detailled-statistic-v2"
 import Meta from "./models/mongo-models/meta"
 import TitleStatistic from "./models/mongo-models/title-statistic"
 import UserMetadata from "./models/mongo-models/user-metadata"
@@ -303,9 +302,9 @@ export default config({
       )
       if (!user || !user.matchHistory) return res.status(200).json([])
       
-      const matches = await HistoryProtobuf.find(
-        { id: { $in: user.matchHistory } }
-      )
+      const matches = await HistoryProtobuf.find({
+        id: { $in: user.matchHistory } 
+      })
       .sort({startTime: -1})
       .skip(skip)
       .limit(limit)
