@@ -1,7 +1,7 @@
-import { type Scene } from "phaser";
-import { DungeonMusic } from "../../../../types/enum/Dungeon";
-import { logger } from "../../../../utils/logger";
-import { preference, subscribeToPreferences } from "../../preferences";
+import { type Scene } from "phaser"
+import { DungeonMusic } from "../../../../types/enum/Dungeon"
+import { logger } from "../../../../utils/logger"
+import { preference, subscribeToPreferences } from "../../preferences"
 
 export const SOUNDS = {
   BUTTON_CLICK: "buttonclick.ogg",
@@ -21,81 +21,81 @@ export const SOUNDS = {
   LEAVE_ROOM: "leaveroom.ogg",
   REFRESH: "refresh.ogg",
   SET_READY: "setready.ogg",
-  START_GAME: "startgame.ogg",
-} as const;
+  START_GAME: "startgame.ogg"
+} as const
 
-type Soundkey = (typeof SOUNDS)[keyof typeof SOUNDS];
+type Soundkey = (typeof SOUNDS)[keyof typeof SOUNDS]
 
-const AUDIO_ELEMENTS: { [K in Soundkey]?: HTMLAudioElement } = {};
+const AUDIO_ELEMENTS: { [K in Soundkey]?: HTMLAudioElement } = {}
 
 export function preloadSounds() {
   Object.values(SOUNDS).forEach(
-    (sound) => (AUDIO_ELEMENTS[sound] = new Audio(`assets/sounds/${sound}`)),
-  );
+    (sound) => (AUDIO_ELEMENTS[sound] = new Audio(`assets/sounds/${sound}`))
+  )
 }
 
 export function preloadMusic(scene: Scene, dungeonMusic: DungeonMusic) {
   scene.load.audio("music_" + dungeonMusic, [
-    `assets/musics/ogg/${dungeonMusic}.ogg`,
-  ]);
+    `assets/musics/ogg/${dungeonMusic}.ogg`
+  ])
 }
 
 function setupSounds() {
   document.body.addEventListener("mouseover", (e) => {
     if (e.target instanceof HTMLButtonElement) {
-      playSound(SOUNDS.BUTTON_HOVER);
+      playSound(SOUNDS.BUTTON_HOVER)
     }
-  });
+  })
   document.body.addEventListener("click", (e) => {
     if (
       e.target instanceof HTMLButtonElement ||
       (e.target instanceof HTMLElement && e.target.closest("button") != null)
     ) {
-      playSound(SOUNDS.BUTTON_CLICK);
+      playSound(SOUNDS.BUTTON_CLICK)
     }
-  });
+  })
 }
 
-preloadSounds();
-setupSounds();
+preloadSounds()
+setupSounds()
 
 export function playSound(key: Soundkey, volume = 1) {
-  const sound = AUDIO_ELEMENTS[key];
+  const sound = AUDIO_ELEMENTS[key]
   if (sound) {
-    sound.currentTime = 0;
-    sound.volume = (volume * preference("sfxVolume")) / 100;
-    sound.play();
+    sound.currentTime = 0
+    sound.volume = (volume * preference("sfxVolume")) / 100
+    sound.play()
   }
 }
 
 interface SceneWithMusic extends Phaser.Scene {
-  music?: Phaser.Sound.WebAudioSound;
+  music?: Phaser.Sound.WebAudioSound
 }
 
 export function playMusic(scene: SceneWithMusic, name: string) {
-  if (scene == null || scene.music?.key === "music_" + name) return;
-  if (scene.music) scene.music.destroy();
+  if (scene == null || scene.music?.key === "music_" + name) return
+  if (scene.music) scene.music.destroy()
 
   try {
     const music = scene.sound.add("music_" + name, {
-      loop: true,
-    }) as Phaser.Sound.WebAudioSound;
+      loop: true
+    }) as Phaser.Sound.WebAudioSound
 
     const unsubscribeToPreferences = subscribeToPreferences(
       ({ musicVolume }) => {
-        music.setVolume(musicVolume / 100);
-      },
-    );
-    music.on("stop", unsubscribeToPreferences);
+        music.setVolume(musicVolume / 100)
+      }
+    )
+    music.on("stop", unsubscribeToPreferences)
 
-    scene.music = music;
-    scene.sound.pauseOnBlur = !preference("playInBackground");
+    scene.music = music
+    scene.sound.pauseOnBlur = !preference("playInBackground")
 
     scene.music.play({
       volume: preference("musicVolume") / 100,
-      loop: true,
-    });
+      loop: true
+    })
   } catch (err) {
-    logger.error("can't play music", err);
+    logger.error("can't play music", err)
   }
 }
