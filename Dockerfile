@@ -4,7 +4,9 @@ RUN apk add git --no-cache
 COPY ./ /usr/src/app
 WORKDIR /usr/src/app
 RUN sh cdn-patch.sh
-RUN npm pkg delete scripts.postinstall && npm install
+RUN rm -rf app/public/src/assets/portraits/* app/public/src/assets/tilesets/* app/public/src/assets/posters/*
+RUN npm pkg delete scripts.postinstall && npm install && cd edit/assetpack && npm install
+RUN npm run assetpack
 
 # Build Step 2 - Build the application
 FROM base AS builder
@@ -14,8 +16,6 @@ ARG FIREBASE_PROJECT_ID
 ARG FIREBASE_STORAGE_BUCKET
 ARG FIREBASE_MESSAGING_SENDER_ID
 ARG FIREBASE_APP_ID
-ARG DISCORD_SERVER
-ARG MIN_HUMAN_PLAYERS
 WORKDIR /usr/src/app
 RUN npm run build
 RUN rm -rf app/public/dist/client/pokechess

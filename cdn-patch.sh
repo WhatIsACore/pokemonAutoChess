@@ -1,17 +1,18 @@
 #!/bin/sh
-# Patches the server to redirect all /assets/* requests to the production CDN.
+# Patches the server to redirect large unpacked asset categories to GitHub CDN.
 # Run before `npm run build`.
 
-CDN="https://pokemon-auto-chess.com"
+GITHUB="https://raw.githubusercontent.com/keldaanCommunity/pokemonAutoChess/master/app/public/src/assets"
+MUSIC="https://raw.githubusercontent.com/keldaanCommunity/pokemonAutoChessMusic/master"
 AC="app/app.config.ts"
 
-# Add bare domain to CSP defaultSrc (wildcard *.domain doesn't match the root)
-sed -i.bak 's|"https://\*\.pokemon-auto-chess\.com"|"https://pokemon-auto-chess.com", "https://*.pokemon-auto-chess.com"|' "$AC" && rm -f "$AC.bak"
-
-# Redirect all /assets/* requests to CDN (insert before express.static line)
-awk -v cdn="$CDN" '
+# Redirect large unpacked asset categories to GitHub CDN (insert before express.static)
+awk -v gh="$GITHUB" -v mu="$MUSIC" '
 /app\.use\(express\.static\(clientSrc\)\)/ {
-  print "    app.use(\"/assets\", (req, res) => res.redirect(301, \"" cdn "/assets\" + req.url))"
+  print "    app.use(\"/assets/portraits\", (req, res) => res.redirect(301, \"" gh "/portraits\" + req.url))"
+  print "    app.use(\"/assets/tilesets\", (req, res) => res.redirect(301, \"" gh "/tilesets\" + req.url))"
+  print "    app.use(\"/assets/posters\", (req, res) => res.redirect(301, \"" gh "/posters\" + req.url))"
+  print "    app.use(\"/assets/musics\", (req, res) => res.redirect(301, \"" mu "\" + req.url))"
 }
 { print }
 ' "$AC" > "$AC.tmp" && mv "$AC.tmp" "$AC"
