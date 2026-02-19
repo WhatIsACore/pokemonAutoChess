@@ -3,7 +3,9 @@ FROM node:22-alpine AS base
 RUN apk add git --no-cache
 COPY ./ /usr/src/app
 WORKDIR /usr/src/app
-RUN sh cdn-patch.sh
+RUN sh patches/cdn-patch.sh
+RUN sh patches/booster-patch.sh
+RUN sh patches/collection-patch.sh
 RUN rm -rf app/public/src/assets/portraits/* app/public/src/assets/tilesets/* app/public/src/assets/posters/*
 RUN npm pkg delete scripts.postinstall && npm install && cd edit/assetpack && npm install
 RUN npm run assetpack
