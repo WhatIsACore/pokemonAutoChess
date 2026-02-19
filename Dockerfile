@@ -6,6 +6,7 @@ WORKDIR /usr/src/app
 RUN sh patches/cdn-patch.sh
 RUN sh patches/booster-patch.sh
 RUN sh patches/collection-patch.sh
+RUN sh patches/scribble-patch.sh
 RUN rm -rf app/public/src/assets/portraits/* app/public/src/assets/tilesets/* app/public/src/assets/posters/*
 RUN npm pkg delete scripts.postinstall && npm install && cd edit/assetpack && npm install
 RUN npm run assetpack
