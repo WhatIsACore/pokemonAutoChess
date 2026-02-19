@@ -8,6 +8,14 @@ RUN npm pkg delete scripts.postinstall && npm install
 
 # Build Step 2 - Build the application
 FROM base AS builder
+ARG FIREBASE_API_KEY
+ARG FIREBASE_AUTH_DOMAIN
+ARG FIREBASE_PROJECT_ID
+ARG FIREBASE_STORAGE_BUCKET
+ARG FIREBASE_MESSAGING_SENDER_ID
+ARG FIREBASE_APP_ID
+ARG DISCORD_SERVER
+ARG MIN_HUMAN_PLAYERS
 WORKDIR /usr/src/app
 RUN npm run build
 RUN rm -rf app/public/dist/client/pokechess
