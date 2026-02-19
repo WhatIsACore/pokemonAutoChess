@@ -1,5 +1,4 @@
 #!/bin/sh
-# Replaces branding assets with custom versions.
 # Run before `npm run build`.
 
 cp patches/assets/scribble.png app/public/src/assets/ui/favicon.ico
@@ -11,3 +10,8 @@ sed -i "s/<title>Pokemon: Auto Chess<\/title>/<title>Smeargle's Auto Chess<\/tit
 # Replace login screen logo with scribble.png and keep crisp pixel art edges
 sed -i 's|assets/ui/pokemon_autochess_final.svg|assets/ui/scribble.png|' app/public/src/pages/auth.tsx
 sed -i 's/object-fit: contain;/object-fit: contain;\n  image-rendering: pixelated;/' app/public/src/pages/auth.css
+
+# Replace sidebar logo and title
+MS="app/public/src/pages/component/main-sidebar/main-sidebar.tsx"
+sed -i 's|assets/ui/colyseus-icon.png|assets/ui/scribble.png|' "$MS"
+sed -i "s|<h1>Pokemon Auto Chess</h1>|<h1>Smeargle's Auto Chess</h1>|" "$MS"
