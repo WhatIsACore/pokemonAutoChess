@@ -1,5 +1,5 @@
 # Build Step 1 - Create the base
-FROM node:20.18-alpine AS base
+FROM node:22-alpine AS base
 RUN apk add git --no-cache
 COPY ./ /usr/src/app
 WORKDIR /usr/src/app
@@ -13,7 +13,7 @@ RUN npm run build
 RUN rm -rf app/public/dist/client/pokechess
 
 # Build Step 3 - Build a minimal production-ready image
-FROM node:20.18-alpine
+FROM node:22-alpine
 WORKDIR /usr/src/app
 COPY package*.json ./
 RUN npm install --only=production --ignore-scripts
