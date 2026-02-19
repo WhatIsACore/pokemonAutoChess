@@ -2,7 +2,7 @@
 # Patches gadgets.ts to make all gadgets available at level 0.
 # Run before `npm run build`.
 
-sed -i 's/levelRequired: [0-9]*/levelRequired: 0/' app/core/gadgets.ts
+sed -i 's/levelRequired: [0-9][0-9]*/levelRequired: 0/' app/core/gadgets.ts
 
 # Default collection filter to "all" instead of "unlockable" so new players see pokemon
 sed -i "s/prevState?.filter ?? \"unlockable\"/prevState?.filter ?? \"all\"/" app/public/src/pages/component/collection/pokemon-collection.tsx
