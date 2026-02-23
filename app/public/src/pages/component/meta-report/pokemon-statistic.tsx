@@ -1,5 +1,7 @@
 import React from "react"
 import { useTranslation } from "react-i18next"
+import { List, useDynamicRowHeight } from "react-window"
+import { AutoSizer } from "react-virtualized-auto-sizer"
 import {
   IHistoryEntry,
   IPokemonStatV2
@@ -8,12 +10,7 @@ import { getPokemonData } from "../../../../../models/precomputed/precomputed-po
 import { PRECOMPUTED_POKEMONS_PER_RARITY } from "../../../../../models/precomputed/precomputed-rarity"
 import { PRECOMPUTED_POKEMONS_PER_TYPE } from "../../../../../models/precomputed/precomputed-types"
 import { Rarity } from "../../../../../types/enum/Game"
-import {
-  Pkm,
-  PkmDuos,
-  PkmFamily,
-  PkmIndex
-} from "../../../../../types/enum/Pokemon"
+import { Pkm, PkmFamily, PkmIndex } from "../../../../../types/enum/Pokemon"
 import { Synergy } from "../../../../../types/enum/Synergy"
 import PokemonPortrait from "../pokemon-portrait"
 import { HistoryDelta } from "./history-delta"
@@ -41,7 +38,6 @@ export default function PokemonStatistic(props: {
     averageItemHeld?: number | null
   }
   const families = new Map<Pkm, FamilyStats>()
-  const duos = Object.values(PkmDuos)
 
   const filteredPokemons = props.pokemons.filter(
     (p) =>
@@ -53,12 +49,7 @@ export default function PokemonStatistic(props: {
   )
 
   filteredPokemons.forEach((pokemon) => {
-    let familyName = PkmFamily[pokemon.name]
-    const duo = duos.find((duo) => duo.includes(pokemon.name))
-    if (duo) {
-      familyName = duo[0]
-    }
-
+    const familyName = PkmFamily[pokemon.name]
     const family = families.get(familyName)
     if (family) {
       family.pokemons.push(pokemon)
@@ -87,21 +78,58 @@ export default function PokemonStatistic(props: {
         : (a[1].averageRank ?? 9) - (b[1].averageRank ?? 9)
   )
 
+  const dynamicRowHeight = useDynamicRowHeight({
+    defaultRowHeight: 120,
+    key: familiesArray.length
+  })
+
   if (filteredPokemons.length === 0) {
     return <p>{t("no_data_available")}</p>
   }
   return (
-    <article>
-      {familiesArray.map(([pkm, family], i) => (
-        <PokemonFamilyCard
-          key={"family." + pkm}
-          pkm={pkm}
-          family={family}
-          rank={i + 1}
-          t={t}
-        />
-      ))}
-    </article>
+    <AutoSizer
+      renderProp={({ height, width }) => {
+        if (height === undefined || width === undefined) return null
+        return (
+          <List<PkmnStatRowData>
+            style={{ height, width }}
+            rowCount={familiesArray.length}
+            rowHeight={dynamicRowHeight}
+            rowComponent={PokemonFamilyRow}
+            rowProps={{
+              familiesArray,
+              t
+            }}
+          />
+        )
+      }}
+    />
+  )
+}
+
+type PkmnStatRowData = {
+  familiesArray: [Pkm, any][]
+  t: (key: string) => string
+}
+
+function PokemonFamilyRow({
+  index,
+  style,
+  familiesArray,
+  t
+}: {
+  ariaAttributes: object
+  index: number
+  style: React.CSSProperties
+} & PkmnStatRowData): React.ReactElement | null {
+  const [pkm, family] = familiesArray[index]
+
+  return (
+    <div style={style}>
+      <div>
+        <PokemonFamilyCard pkm={pkm} family={family} rank={index + 1} t={t} />
+      </div>
+    </div>
   )
 }
 

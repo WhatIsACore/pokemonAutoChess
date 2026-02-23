@@ -135,7 +135,9 @@ export enum Transfer {
   DELETE_ACCOUNT = "DELETE_ACCOUNT",
   HEAP_SNAPSHOT = "HEAP_SNAPSHOT",
   RECONNECT_PROMPT = "RECONNECT_PROMPT",
-  OVERWRITE_BOARD = "OVERWRITE_BOARD"
+  OVERWRITE_BOARD = "OVERWRITE_BOARD",
+  NOTIFICATIONS = "NOTIFICATIONS",
+  NOTIFICATION_SEEN = "NOTIFICATION_SEEN"
 }
 
 export enum ReadWriteMode {
@@ -293,7 +295,6 @@ export interface IPlayer {
   rerollCount: number
   totalMoneyEarned: number
   totalPlayerDamageDealt: number
-  wildChance: number
   eggChance: number
   goldenEggChance: number
   cellBattery: number

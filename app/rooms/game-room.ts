@@ -43,6 +43,7 @@ import {
 import { PRECOMPUTED_POKEMONS_PER_RARITY } from "../models/precomputed/precomputed-rarity"
 import { getAdditionalsTier1, getSellPrice } from "../models/shop"
 import { fetchEventLeaderboard } from "../services/leaderboard"
+import { notificationsService } from "../services/notifications"
 import {
   IDragDropCombineMessage,
   IDragDropItemMessage,
@@ -81,7 +82,7 @@ import {
   getFreeSpaceOnBench
 } from "../utils/board"
 import { isValidDate } from "../utils/date"
-import { formatMinMaxRanks } from "../utils/elo"
+import { formatMinMaxRanks, getRank } from "../utils/elo"
 import { logger } from "../utils/logger"
 import { clamp } from "../utils/number"
 import { chance, shuffleArray } from "../utils/random"
@@ -855,12 +856,23 @@ export default class GameRoom extends Room<{ state: GameState }> {
 
     const usr = await UserMetadata.findOne({ uid: player.id })
     if (usr) {
+      // Track previous values for notifications
+      const previousElo = usr.elo
+      const previousRank = getRank(previousElo)
+
       if (eligibleToXP) {
         const expThreshold = 1000
         if (usr.exp + exp >= expThreshold) {
           usr.level += 1
           usr.booster += 1
           usr.exp = usr.exp + exp - expThreshold
+
+          // Add level up notification
+          notificationsService.addNotification(
+            player.id,
+            "level_up",
+            usr.level.toString()
+          )
         } else {
           usr.exp = usr.exp + exp
         }
@@ -936,6 +948,16 @@ export default class GameRoom extends Room<{ state: GameState }> {
         usr.elo = elo
         usr.maxElo = Math.max(usr.maxElo, elo)
 
+        // Check if elo rank changed
+        const newRank = getRank(elo)
+        if (newRank !== previousRank) {
+          notificationsService.addNotification(
+            player.id,
+            "elo_rank_change",
+            newRank
+          )
+        }
+
         const dbrecord = this.transformToSimplePlayer(player)
         const synergiesMap = new Map<Synergy, number>()
         player.synergies.forEach((v, k) => {
@@ -966,10 +988,10 @@ export default class GameRoom extends Room<{ state: GameState }> {
           if (usr.maxEventPoints >= MAX_EVENT_POINTS) {
             usr.eventFinishTime = new Date()
 
-            const finisher = await UserMetadata.findOne({
+            const nbFinishers = await UserMetadata.countDocuments({
               eventFinishTime: { $ne: null }
             })
-            if (!finisher) {
+            if (nbFinishers === 0) {
               player.titles.add(Title.VICTORIOUS)
               this.presence.publish(
                 "announcement",
@@ -977,6 +999,11 @@ export default class GameRoom extends Room<{ state: GameState }> {
               )
             }
             player.titles.add(Title.FINISHER)
+            notificationsService.addNotification(
+              player.id,
+              "victory_road_finished",
+              `${nbFinishers + 1}`
+            )
             fetchEventLeaderboard() // a new finisher is enough to justify fetching the leaderboard again immediately
           }
 
@@ -1044,12 +1071,21 @@ export default class GameRoom extends Room<{ state: GameState }> {
         usr.titles = []
       }
 
+      const newTitlesEarned: string[] = []
       player.titles.forEach((t) => {
         if (!usr.titles.includes(t)) {
           //logger.info("title added ", t)
           usr.titles.push(t)
+          newTitlesEarned.push(t)
         }
       })
+
+      // Add notification for new titles
+      if (newTitlesEarned.length > 0) {
+        newTitlesEarned.forEach((title) => {
+          notificationsService.addNotification(player.id, "new_title", title)
+        })
+      }
 
       //logger.debug(usr);
       //usr.markModified('metadata');

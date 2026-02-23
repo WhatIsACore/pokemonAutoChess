@@ -58,10 +58,13 @@ export default class AttackingState extends PokemonState {
           // if target is no longer alive or at range, retargeting
           target = this.getNearestTargetAtRange(pokemon, board)
         }
-      } else if (previousTarget && previousTarget.isTargettableBy(pokemon) === false) {
+      } else if (
+        previousTarget &&
+        previousTarget.isTargettableBy(pokemon) === false
+      ) {
         // previous target is no longer targettable, retargeting
         target = this.getNearestTargetAtRange(pokemon, board)
-      } 
+      }
 
       // no target at range, changing to moving state
       if (!target || pokemon.status.charm) {
@@ -82,7 +85,7 @@ export default class AttackingState extends PokemonState {
           target
         )
 
-        if (pokemon.pp >= pokemon.maxPP && !pokemon.status.silence) {
+        if (pokemon.pp >= pokemon.maxPP && pokemon.canCast) {
           // CAST ABILITY
           castAbility(pokemon.skill, pokemon, board, target)
         } else {

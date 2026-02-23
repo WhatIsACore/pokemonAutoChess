@@ -32,6 +32,7 @@ import UserMetadata, {
 } from "../../models/mongo-models/user-metadata"
 import { getPokemonData } from "../../models/precomputed/precomputed-pokemon-data"
 import { discordService } from "../../services/discord"
+import { notificationsService } from "../../services/notifications"
 import {
   CollectionEmotions,
   Emotion,
@@ -95,6 +96,14 @@ export class OnJoinCommand extends Command<
         )
         if (pendingGame != null && !pendingGame.isExpired) {
           client.send(Transfer.RECONNECT_PROMPT, pendingGame.gameId)
+        }
+
+        // Send any pending notifications
+        const notifications = notificationsService.getNotifications(
+          client.auth.uid
+        )
+        if (notifications.length > 0) {
+          client.send(Transfer.NOTIFICATIONS, notifications)
         }
       } else {
         // create new user account
@@ -333,20 +342,23 @@ export class OpenBoosterCommand extends Command<
       const user = this.room.users.get(client.auth.uid)
       if (!user) return
 
-      // First, find the user and check if they have boosters
-      let userDoc = await UserMetadata.findOne({
-        uid: client.auth.uid,
-        booster: { $gt: 0 }
-      })
-      if (!userDoc) return
+      // Immediately find and decrement booster count to avoid any possible race condition
+      let userDoc = await UserMetadata.findOneAndUpdate(
+        {
+          uid: client.auth.uid,
+          booster: { $gt: 0 }
+        },
+        {
+          $inc: { booster: -1 }
+        },
+        { new: true }
+      )
 
-      const boosterContent = createBooster(userDoc)
+      if (!userDoc) return // No boosters available or user not found
 
       // Build update operations for all booster cards
-      const updateOperations: any = {
-        $inc: { booster: -1 }
-      }
-
+      const updateOperations: any = {}
+      const boosterContent = createBooster(userDoc)
       boosterContent.forEach((card) => {
         const index = PkmIndex[card.name]
         const existingItem = userDoc!.pokemonCollection.get(index)
@@ -405,7 +417,9 @@ export class OpenBoosterCommand extends Command<
 
       // Perform atomic update
       await userDoc.updateOne(updateOperations)
-      userDoc = await UserMetadata.findOne({ uid: client.auth.uid }) // reload updated doc
+
+      // Reload updated user
+      userDoc = await UserMetadata.findOne({ uid: client.auth.uid })
       if (!userDoc) {
         logger.error(
           `User document not found after opening booster: ${client.auth.uid}`
@@ -451,7 +465,7 @@ export class OpenBoosterCommand extends Command<
         }
       })
 
-      await checkTitlesAfterEmotionUnlocked(userDoc, boosterContent)
+      checkTitlesAfterEmotionUnlocked(userDoc, boosterContent)
       await userDoc.save()
       client.send(Transfer.BOOSTER_CONTENT, boosterContent)
       client.send(Transfer.USER_PROFILE, toUserMetadataJSON(userDoc))
@@ -663,7 +677,7 @@ export class BuyEmotionCommand extends Command<
       pokemonCollectionItem.selectedEmotion = emotion
       pokemonCollectionItem.selectedShiny = shiny
 
-      await checkTitlesAfterEmotionUnlocked(mongoUser, [
+      checkTitlesAfterEmotionUnlocked(mongoUser, [
         { name: PkmByIndex[index], emotion, shiny }
       ])
       await mongoUser.save()
@@ -698,9 +712,12 @@ async function checkTitlesAfterEmotionUnlocked(
           (p) =>
             NonPkm.includes(p) === false && PkmAltForms.includes(p) === false
         )
-        .every((pkm) => {          
+        .every((pkm) => {
           const baseForm = getBaseAltForm(pkm)
-          const accepted: Pkm[] = baseForm in PkmAltFormsByPkm ? [baseForm, ...PkmAltFormsByPkm[baseForm]] : [baseForm]
+          const accepted: Pkm[] =
+            baseForm in PkmAltFormsByPkm
+              ? [baseForm, ...PkmAltFormsByPkm[baseForm]]
+              : [baseForm]
           return accepted.some((form) => {
             const item = mongoUser.pokemonCollection.get(PkmIndex[form])
             if (!item) return false
@@ -758,11 +775,7 @@ async function checkTitlesAfterEmotionUnlocked(
   }
 
   if (newTitles.length > 0) {
-    mongoUser.titles.push(...newTitles)
-    await UserMetadata.updateOne(
-      { uid: mongoUser.uid },
-      { titles: mongoUser.titles }
-    )
+    mongoUser.titles.push(...newTitles) // NOTE: document needs to be saved after those modifications
   }
 }
 
