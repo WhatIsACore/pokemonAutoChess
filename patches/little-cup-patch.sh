@@ -22,3 +22,12 @@ sed -i '/^import { logger } from "..\/utils\/logger"/a\import { SpecialGameRule 
 sed -i '/tryEvolve(/,/): void | Pokemon {/ {
   /): void | Pokemon {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP) return
 }' "$ER"
+
+# Also block canEvolveIfGettingOne to prevent bench space bypass
+sed -i '/canEvolveIfGettingOne(pokemon: Pokemon, player: Player): boolean {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP) return false' "$ER"
+
+# Hide evolution shine/shimmer in shop portraits when Little Cup is active
+PP="app/public/src/pages/component/game/game-pokemon-portrait.tsx"
+sed -i '/import { CountEvolutionRule } from "..\/..\/..\/..\/..\/core\/evolution-rules"/a\import { SpecialGameRule } from "../../../../../types/enum/SpecialGameRule"' "$PP"
+sed -i 's/const willEvolve =/const willEvolve = specialGameRule === SpecialGameRule.LITTLE_CUP ? false :/' "$PP"
+sed -i 's/const shouldShimmer =/const shouldShimmer = specialGameRule === SpecialGameRule.LITTLE_CUP ? false :/' "$PP"
