@@ -9,7 +9,7 @@ sed -i '/EVERYONE_IS_HERE = "EVERYONE_IS_HERE",/a\  LITTLE_CUP = "LITTLE_CUP",' 
 
 # Add English translations
 EN="app/public/dist/client/locales/en/translation.json"
-sed -i '/"EVERYONE_IS_HERE": "Everyone is here !",/a\		"LITTLE_CUP": "Little Cup",' "$EN"
+sed -i '/"EVERYONE_IS_HERE": "Everyone is here !",/a\		"LITTLE_CUP": "★ Little Cup",' "$EN"
 sed -i '/"EVERYONE_IS_HERE": "All the additional picks are available immediately",/a\		"LITTLE_CUP": "No evolutions",' "$EN"
 
 # Block all evolutions when Little Cup is active
@@ -20,7 +20,7 @@ sed -i '/^import { logger } from "..\/utils\/logger"/a\import { SpecialGameRule 
 
 # Early-return in tryEvolve if Little Cup is active
 sed -i '/tryEvolve(/,/): void | Pokemon {/ {
-  /): void | Pokemon {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP) return
+  /): void | Pokemon {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP \&\& pokemon.name !== Pkm.EGG) return
 }' "$ER"
 
 # Also block canEvolveIfGettingOne to prevent bench space bypass

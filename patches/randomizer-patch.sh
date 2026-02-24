@@ -8,7 +8,7 @@ sed -i '/EVERYONE_IS_HERE = "EVERYONE_IS_HERE",/a\  RANDOMIZER = "RANDOMIZER",' 
 
 # Add English translations
 EN="app/public/dist/client/locales/en/translation.json"
-sed -i '/"EVERYONE_IS_HERE": "Everyone is here !",/a\		"RANDOMIZER": "Randomizer",' "$EN"
+sed -i '/"EVERYONE_IS_HERE": "Everyone is here !",/a\		"RANDOMIZER": "★ Randomizer",' "$EN"
 sed -i '/"EVERYONE_IS_HERE": "All the additional picks are available immediately",/a\		"RANDOMIZER": "Each Pokemon family has randomized synergies!",' "$EN"
 
 # Add roomSeed field to Player
