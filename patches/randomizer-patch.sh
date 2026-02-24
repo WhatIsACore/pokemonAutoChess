@@ -44,6 +44,9 @@ sed -i '/^import { getPokemonData } from ".\/precomputed\/precomputed-pokemon-da
 # Patch shop filterCandidates to use shuffled types for stage 10/20 propositions
 sed -i 's/const hasSynergyWanted =/const hasSynergyWanted = player.specialGameRule === SpecialGameRule.RANDOMIZER\n          ? synergyWanted === undefined || types.some(t => getShuffledSynergy(player.roomSeed, pkm, t) === synergyWanted)\n          :/' "$SH"
 
+# Add roomSeed to IPlayer interface
+sed -i '/lightY: number/a\  roomSeed: string' "app/types/index.ts"
+
 # --- Client-side display patches ---
 
 # Patch game-pokemon-portrait.tsx: shuffle types on factory-created pokemon for shop display
