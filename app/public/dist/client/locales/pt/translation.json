@@ -1348,7 +1348,7 @@
 		"WONDER_GUARD": "Inflige [30,60,120,SP] SPECIAL e deixa todos os inimigos adjacentes PARALYSIS por 3 segundos",
 		"ELECTRIC_SURGE": "Aumente a SPEED de todos os Pokémon ELECTRIC em [10,SP]",
 		"PSYCHIC_SURGE": "Todos os aliados recebem [40,SP] SHIELD, exceto o lançador",
-		"PAYDAY": "Inflige [30,60,90,SP] SPECIAL. Se o alvo for KO, o jogador recebe [1,2,3] GOLD",
+		"PAYDAY": "Inflige [30,60,90,SP=0.5] SPECIAL. Se o alvo for KO, o jogador recebe [1,2,3] GOLD",
 		"BEAT_UP": "Summon [1,2,3] Houndour ([100,SP]% HP, sem itens)",
 		"BLUE_FLARE": "Inflige [50,SP] SPECIAL + 10 por sinergia FIRE",
 		"FUSION_BOLT": "Inflige [50,SP] SPECIAL + 10 por sinergia ELECTRIC",
@@ -2514,11 +2514,13 @@
 	"game-reconnect-modal-body": "Você saiu de um jogo em andamento. Deseja se reconectar ao jogo anterior?",
 	"key": "Chave",
 	"action": "Ação",
-	"key_desc_sell": "Vender o Pokémon sinalizado",
-	"key_desc_buy_xp": "Comprar experiência",
-	"key_desc_refresh": "Renovar a loja",
-	"key_desc_avatar_anim": "Mostrar a animação do avatar",
-	"key_desc_avatar_emotes": "Ativar o menú de emotes",
+	"key_description": {
+		"sell": "Vender o Pokémon sinalizado",
+		"buy_xp": "Comprar experiência",
+		"refresh": "Renovar a loja",
+		"avatar_anim": "Mostrar a animação do avatar",
+		"avatar_emotes": "Ativar o menú de emotes"
+	},
 	"gadgets": "Engenhocas",
 	"gadgets_unlocked": "{{count}}/{{total}} Engenhocas disponíveis",
 	"gadget": {

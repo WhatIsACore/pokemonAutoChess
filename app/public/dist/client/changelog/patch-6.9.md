@@ -3,6 +3,9 @@
 - Finizen
 - Palafin
 - Palafin Hero
+- Mareanie
+- Toxapex
+- Shadow Mewtwo
 
 # Changes to Synergies
 
@@ -36,6 +39,7 @@
 - Magnet Pull (Meltan) can no longer be casted by Metronome. Rarity of attracted mon now follows your current player level rarity odds.
 - Buff Glaive Rush (Frigibax): enemies hit now also get ARMOR_BREAK for 6 seconds
 - New passive for Fletchlinder line: drops embers on the ground when flying away.
+- Shadow Lugia is now a regional variant of Lugia in Dark regions
 
 # Changes to Items
 
@@ -43,9 +47,6 @@
 - Added visual effects for support items on adjacent positions
 
 # Changes to Gameplay
-
-- Crowd control (CC) statuses that prevent attacking and movement (Sleep, Freeze, Lock) now have a 1-second cooldown per unit when they wear off or are cleansed, preventing them from being immediately re-applied. This is intended to give units a small window to act and mitigate infinite CC locking combos.
-
 
 # Misc
 
@@ -56,3 +57,4 @@
 - New Scribble: The Chosen Ones
 - New Town Encounter: Kingambit
 - Add 15-day history tracking to meta reports with multi-line trends visualization
+- Added a key shortcut to open the wiki and the team planner

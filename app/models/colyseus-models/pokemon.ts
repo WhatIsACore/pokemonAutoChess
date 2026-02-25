@@ -5375,7 +5375,6 @@ export class Lugia extends Pokemon {
   ])
   rarity = Rarity.LEGENDARY
   evolution = Pkm.SHADOW_LUGIA
-  evolutionRule = new ItemEvolutionRule([Item.DUSK_STONE])
   stars = 3
   hp = 300
   atk = 26
@@ -5385,14 +5384,12 @@ export class Lugia extends Pokemon {
   maxPP = 80
   range = 1
   skill = Ability.SKY_ATTACK
-  passive = Passive.LUGIA
 }
 
 export class ShadowLugia extends Pokemon {
   types = new SetSchema<Synergy>([
     Synergy.AQUATIC,
     Synergy.FLYING,
-    Synergy.PSYCHIC,
     Synergy.DARK
   ])
   rarity = Rarity.LEGENDARY
@@ -5405,6 +5402,11 @@ export class ShadowLugia extends Pokemon {
   maxPP = 80
   range = 1
   skill = Ability.SKY_ATTACK_SHADOW
+  regional = true
+  isInRegion(map: DungeonPMDO, state: GameState) {
+    const regionSynergies = RegionDetails[map]?.synergies ?? []
+    return regionSynergies.includes(Synergy.DARK)
+  }
 }
 
 export class Giratina extends Pokemon {
@@ -6333,6 +6335,14 @@ export class GalarianFarfetchd extends Pokemon {
   maxPP = 60
   range = 1
   skill = Ability.LEAF_BLADE
+  regional = true
+  isInRegion(map: DungeonPMDO) {
+    const regionSynergies = RegionDetails[map]?.synergies ?? []
+    return (
+      regionSynergies.includes(Synergy.FIGHTING) ||
+      regionSynergies.includes(Synergy.DARK)
+    )
+  }
 }
 
 export class Kecleon extends Pokemon {
@@ -7044,6 +7054,29 @@ export class Mewtwo extends Pokemon {
   maxPP = 110
   range = 3
   skill = Ability.PSYSTRIKE
+}
+
+export class ShadowMewtwo extends Pokemon {
+  types = new SetSchema<Synergy>([
+    Synergy.PSYCHIC,
+    Synergy.MONSTER,
+    Synergy.DARK
+  ])
+  rarity = Rarity.LEGENDARY
+  stars = 3
+  hp = 200
+  atk = 25
+  speed = 67
+  def = 10
+  speDef = 10
+  maxPP = 110
+  range = 3
+  skill = Ability.PSYSTRIKE
+  regional = true
+  isInRegion(map: DungeonPMDO) {
+    const regionSynergies = RegionDetails[map]?.synergies
+    return regionSynergies?.includes(Synergy.DARK)
+  }
 }
 
 export class Marshadow extends Pokemon {
@@ -20234,6 +20267,37 @@ export class PalafinHero extends Pokemon {
   skill = Ability.JET_PUNCH
 }
 
+export class Mareanie extends Pokemon {
+  types = new SetSchema<Synergy>([Synergy.WATER, Synergy.POISON])
+  rarity = Rarity.RARE
+  stars = 1
+  evolution = Pkm.TOXAPEX
+  hp = 60
+  atk = 6
+  speed = 35
+  def = 8
+  speDef = 8
+  maxPP = 100
+  range = 1
+  skill = Ability.BANEFUL_BUNKER
+  additional = true
+}
+
+export class Toxapex extends Pokemon {
+  types = new SetSchema<Synergy>([Synergy.WATER, Synergy.POISON])
+  rarity = Rarity.RARE
+  stars = 2
+  hp = 120
+  atk = 12
+  speed = 35
+  def = 20
+  speDef = 20
+  maxPP = 100
+  range = 1
+  skill = Ability.BANEFUL_BUNKER
+  additional = true
+}
+
 export const PokemonClasses: Record<
   Pkm,
   new (
@@ -20495,6 +20559,7 @@ export const PokemonClasses: Record<
   [Pkm.AZELF]: Azelf,
   [Pkm.UXIE]: Uxie,
   [Pkm.MEWTWO]: Mewtwo,
+  [Pkm.SHADOW_MEWTWO]: ShadowMewtwo,
   [Pkm.KYUREM]: Kyurem,
   [Pkm.RESHIRAM]: Reshiram,
   [Pkm.ZEKROM]: Zekrom,
@@ -21395,7 +21460,9 @@ export const PokemonClasses: Record<
   [Pkm.GREAT_TUSK]: GreatTusk,
   [Pkm.FINIZEN]: Finizen,
   [Pkm.PALAFIN]: Palafin,
-  [Pkm.PALAFIN_HERO]: PalafinHero
+  [Pkm.PALAFIN_HERO]: PalafinHero,
+  [Pkm.MAREANIE]: Mareanie,
+  [Pkm.TOXAPEX]: Toxapex
 }
 
 // declare all the classes in colyseus schema TypeRegistry

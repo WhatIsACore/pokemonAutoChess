@@ -589,6 +589,7 @@ export enum Pkm {
   MANTINE = "MANTINE",
   MANTYKE = "MANTYKE",
   MARACTUS = "MARACTUS",
+  MAREANIE = "MAREANIE",
   MAREEP = "MAREEP",
   MARILL = "MARILL",
   MAROWAK = "MAROWAK",
@@ -854,6 +855,7 @@ export enum Pkm {
   SEVIPER = "SEVIPER",
   SEWADDLE = "SEWADDLE",
   SHADOW_LUGIA = "SHADOW_LUGIA",
+  SHADOW_MEWTWO = "SHADOW_MEWTWO",
   SHARPEDO = "SHARPEDO",
   SHAYMIN = "SHAYMIN",
   SHAYMIN_SKY = "SHAYMIN_SKY",
@@ -997,6 +999,7 @@ export enum Pkm {
   TORTERRA = "TORTERRA",
   TOTODILE = "TOTODILE",
   //TOUCANNON = "TOUCANNON",
+  TOXAPEX = "TOXAPEX",
   TOXEL = "TOXEL",
   TOXICROAK = "TOXICROAK",
   TOXTRICITY = "TOXTRICITY",
@@ -1346,6 +1349,7 @@ export const PkmIndex: { [key in Pkm]: string } = {
   [Pkm.DRAGONAIR]: "0148",
   [Pkm.DRAGONITE]: "0149",
   [Pkm.MEWTWO]: "0150",
+  [Pkm.SHADOW_MEWTWO]: "0150-0003",
   [Pkm.MEW]: "0151",
 
   // Gen 2
@@ -2097,8 +2101,8 @@ export const PkmIndex: { [key in Pkm]: string } = {
   [Pkm.LYCANROC_NIGHT]: "0745-0001",
   [Pkm.WISHIWASHI]: "0746",
   [Pkm.WISHIWASHI_SCHOOL]: "0746-0001",
-  //[Pkm.MAREANIE]: "0747",
-  //[Pkm.TOXAPEX]: "0748",
+  [Pkm.MAREANIE]: "0747",
+  [Pkm.TOXAPEX]: "0748",
   [Pkm.MUDBRAY]: "0749",
   [Pkm.MUDSDALE]: "0750",
   [Pkm.DEWPIDER]: "0751",
@@ -2662,6 +2666,7 @@ export const PkmFamily: { [key in Pkm]: Pkm } = {
   [Pkm.AZELF]: Pkm.AZELF,
   [Pkm.UXIE]: Pkm.UXIE,
   [Pkm.MEWTWO]: Pkm.MEWTWO,
+  [Pkm.SHADOW_MEWTWO]: Pkm.SHADOW_MEWTWO,
   [Pkm.KYUREM]: Pkm.KYUREM,
   [Pkm.RESHIRAM]: Pkm.RESHIRAM,
   [Pkm.ZEKROM]: Pkm.ZEKROM,
@@ -3583,7 +3588,9 @@ export const PkmFamily: { [key in Pkm]: Pkm } = {
   [Pkm.GREAT_TUSK]: Pkm.GREAT_TUSK,
   [Pkm.FINIZEN]: Pkm.FINIZEN,
   [Pkm.PALAFIN]: Pkm.FINIZEN,
-  [Pkm.PALAFIN_HERO]: Pkm.FINIZEN
+  [Pkm.PALAFIN_HERO]: Pkm.FINIZEN,
+  [Pkm.MAREANIE]: Pkm.MAREANIE,
+  [Pkm.TOXAPEX]: Pkm.MAREANIE
 }
 
 export const PkmRegionalVariants: { [key in Pkm]?: readonly Pkm[] } = {
@@ -3616,7 +3623,9 @@ export const PkmRegionalVariants: { [key in Pkm]?: readonly Pkm[] } = {
     Pkm.TAUROS_COMBAT_BREED,
     Pkm.TAUROS_BLAZE_BREED,
     Pkm.TAUROS_AQUA_BREED
-  ]
+  ],
+  [Pkm.LUGIA]: [Pkm.SHADOW_LUGIA],
+  [Pkm.MEWTWO]: [Pkm.SHADOW_MEWTWO]
 } as const
 
 export function isRegionalVariant(a: Pkm, b: Pkm): boolean {
