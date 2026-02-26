@@ -15,7 +15,7 @@ sed -i '/"EVERYONE_IS_HERE": "All the additional picks are available immediately
 
 # game-commands.ts — drag-drop full-items check
 GC="app/rooms/commands/game-commands.ts"
-sed -i '1s|^|import { getMaxItemCount } from "../core/item-limits"\n|' "$GC"
+sed -i '1s|^|import { getMaxItemCount } from "../../core/item-limits"\n|' "$GC"
 sed -i 's/pokemon\.items\.size >= 3 &&/pokemon.items.size >= getMaxItemCount(this.state.specialGameRule) \&\&/' "$GC"
 
 # pokemon-entity.ts — addItem() guard
