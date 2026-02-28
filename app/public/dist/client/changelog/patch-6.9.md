@@ -40,6 +40,10 @@
 - Buff Glaive Rush (Frigibax): enemies hit now also get ARMOR_BREAK for 6 seconds
 - New passive for Fletchlinder line: drops embers on the ground when flying away.
 - Shadow Lugia is now a regional variant of Lugia in Dark regions
+- Rework Giratina: Teleport into the largest group of enemy Pokémon, dealing [60,SP] SPECIAL to ADJACENT enemies, breaking barriers like PROTECT and Reflect, and transforms into Origin Form
+- Rework Origin Giratina: Slash all enemies in front of the user, dealing [20,40,60,SP] SPECIAL and healing HP for 25% of the damage dealt. If only one enemy is hit, deals [40,80,120,SP] SPECIAL.
+- Nerf Lapras: Speed 44 → 38, Def 10 → 7, Spe def 12 → 9
+- Nerf Palkia: PP 110 → 120
 
 # Changes to Items
 
@@ -58,3 +62,4 @@
 - New Town Encounter: Kingambit
 - Add 15-day history tracking to meta reports with multi-line trends visualization
 - Added a key shortcut to open the wiki and the team planner
+- New users have now a random generated name (ex: "Happy-Charmander-12345") to prevent eventual doxxing.
