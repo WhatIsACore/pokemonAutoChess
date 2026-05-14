@@ -25,7 +25,6 @@
 - Roost (Pidove), Firestarter (Fletchling) and Plasma Tempest (Rotom Fan) now uses the new smarter flying away logic. These abilities also proc the protection and aggro reset effect from Flying synergy if active when doing so.
 - Changed Tropius Dish to Nanab berry: once below 50%HP, heal 50HP and give 1 gold
 
-
 > Required preemptive nerf due to some interactions with wands that love high speed backline attackers
 
 - Nerf Geomancy (Xerneas): Speed 20 → 15
@@ -45,6 +44,16 @@
 - Fuecoco PP: 60/60/60 → 100/80/60
 - Revert Popplio buff from 5.7 ; PP 70 → 80
 
+> Chimecho was performing badly at low elo and very well at high elo. The passive is the main culprit, giving incredible value when played in sound 6 and fully surrounded with sound allies. These specific conditions were not often met at low elo, but highly optimized at high elo, creating a huge power gap for this Pokémon. We change the range and passive to both reduce its power ceiling and make it more intuitive and less conditional.
+
+- Nerf Chimecho ; range 3 → 2 ; passive reworked: Resonates to the sounds of adjacent allies, which gives 3 PP to Chimecho when they cast their ability.
+
+- Ralts line: PP 95 → 100 ; buff Future Sight: now deals 20% of damage to adjacent targets as well. New visual animation.
+- New visual animation for Doom Desire
+- Nerf Sticky Web (Dewpider): fix damage applied to all targets hit instead of just the main target, and reduce the range of the web from a 2-tile cone in front of the user to a 1-tile cone.
+- Improve Dream Eater: will no longer be stuck in a cast loop if the target has immunity to sleep, and will target an enemy that can be put to sleep if the main target is immune.
+
+
 # Changes to Items
 
 - Lucky Ribbon: Remove 10 DEF, added 15 SHIELD. New effect: Holder now has 15% additional chance to dodge incoming attacks.
@@ -56,6 +65,7 @@
 - New town encounter: Ludicolo
 - Locked status now also prevents forced displacement (like Aquatic tidal wave or Fighting knockback)
 - Storm weather: lighting falls more often and Electric Pokémon are supercharged when hit by lightning
+- Item carousel phases in town have 5 seconds increased duration when there is a town encounter, to give more time to read and react
 
 # Events
 
