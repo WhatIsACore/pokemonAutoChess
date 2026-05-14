@@ -1,4 +1,3 @@
-import React from "react"
 import { ToastContainer } from "react-toastify"
 import { GameAdditionalPokemonsIcon } from "./game-additional-pokemons"
 import GameExperience from "./game-experience"
@@ -9,6 +8,7 @@ import GameRarityPercentage from "./game-rarity-percentage"
 import GameRefresh from "./game-refresh"
 import { GameRegionalPokemonsIcon } from "./game-regional-pokemons"
 import GameStore from "./game-store"
+import { GameStreakInfo } from "./game-streak-info"
 import { GameTeamInfo } from "./game-team-info"
 import "./game-shop.css"
 
@@ -19,6 +19,7 @@ export default function GameShop() {
         <div id="game-shop-info">
           <GameLifeInfo />
           <GameMoneyInfo />
+          <GameStreakInfo />
           <div className="spacer"></div>
           <GameTeamInfo />
         </div>
@@ -36,6 +37,7 @@ export default function GameShop() {
       </div>
       <ToastContainer
         className="toast"
+        toastClassName="toast-shop"
         containerId="toast-money"
         position="bottom-center"
         autoClose={2000}
@@ -48,6 +50,7 @@ export default function GameShop() {
       />
       <ToastContainer
         className="toast"
+        toastClassName="toast-shop"
         containerId="toast-life"
         position="bottom-center"
         autoClose={2000}

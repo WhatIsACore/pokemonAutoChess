@@ -3,20 +3,22 @@ import { User } from "@firebase/auth-types"
 import firebase from "firebase/compat/app"
 import type { server } from "../../app.config.ts"
 import { FIREBASE_CONFIG } from "../../config"
-import { IBot } from "../../models/mongo-models/bot-v2.js"
 import AfterGameState from "../../rooms/states/after-game-state"
 import GameState from "../../rooms/states/game-state"
 import LobbyState from "../../rooms/states/lobby-state"
 import PreparationState from "../../rooms/states/preparation-state"
-import { Emotion, Item, Role, Title, Transfer } from "../../types"
+import { Emotion, Role, Title, Transfer } from "../../types"
+import type { Booster } from "../../types/Booster"
 import { CloseCodes } from "../../types/enum/CloseCodes"
 import { EloRank } from "../../types/enum/EloRank.js"
 import { BotDifficulty } from "../../types/enum/Game.js"
-import { PkmProposition } from "../../types/enum/Pokemon.js"
 import { SpecialGameRule } from "../../types/enum/SpecialGameRule.js"
 import { IUserMetadataJSON } from "../../types/interfaces/UserMetadata"
 import { logger } from "../../utils/logger"
+import { IBot } from "./models/bot-v2"
+import { LocalStoreKeys, localStore } from "./pages/utils/store.js"
 import store from "./stores"
+import { setBoosterContent } from "./stores/BoostersStore"
 import { logIn, setProfile } from "./stores/NetworkStore"
 
 const endpoint = `${window.location.protocol.replace("http", "ws")}//${
@@ -35,7 +37,7 @@ export function authenticateUser() {
     firebase.auth().onAuthStateChanged(async (user) => {
       if (!user) return reject(CloseCodes.USER_NOT_AUTHENTICATED)
       store.dispatch(logIn(user))
-      fetchProfile()
+      fetchProfile(true)
       resolve(user)
     })
   })
@@ -56,6 +58,43 @@ export async function fetchProfile(forceRefresh: boolean = false) {
     .then((profile: IUserMetadataJSON) => {
       store.dispatch(setProfile(profile))
     })
+}
+
+export type TwitchVerificationStartResponse = {
+  authorizeUrl: string
+  expiresAt: string
+}
+
+export async function startTwitchVerification(): Promise<TwitchVerificationStartResponse> {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch("/twitch/verify/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+
+  return res.json()
+}
+
+export async function unlinkTwitchVerification(): Promise<void> {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch("/twitch/verify/unlink", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
 }
 
 export const rooms: {
@@ -98,14 +137,36 @@ export function joinLobby(room: Room<{ state: LobbyState }>) {
   rooms.lobby = room
 }
 
-export function joinPreparation(room: Room<PreparationState>) {
+export function joinPreparation(
+  room: Room<PreparationState>,
+  reconnectionTokenExpirationTimeInSeconds?: number
+) {
   leaveAllRooms()
   rooms.preparation = room
+  localStore.set(
+    LocalStoreKeys.RECONNECTION_PREPARATION,
+    {
+      reconnectionToken: room.reconnectionToken,
+      roomId: room.roomId
+    },
+    reconnectionTokenExpirationTimeInSeconds
+  )
 }
 
-export function joinGame(room: Room<GameState>) {
+export function joinGame(
+  room: Room<GameState>,
+  reconnectionTokenExpirationTimeInSeconds?: number
+) {
   leaveAllRooms()
   rooms.game = room
+  localStore.set(
+    LocalStoreKeys.RECONNECTION_GAME,
+    {
+      reconnectionToken: room.reconnectionToken,
+      roomId: room.roomId
+    },
+    reconnectionTokenExpirationTimeInSeconds
+  )
 }
 
 export function joinAfter(room: Room<AfterGameState>) {
@@ -132,10 +193,6 @@ export function removeMessage(message: { id: string }, source: ChatRoom) {
   } else if (source === "preparation" && rooms.preparation) {
     rooms.preparation.send(Transfer.REMOVE_MESSAGE, message)
   }
-}
-
-export function searchName(name: string) {
-  rooms.lobby?.send(Transfer.SEARCH, { name })
 }
 
 export function addBot(bot: BotDifficulty | IBot) {
@@ -166,12 +223,8 @@ export function buyInShop(id: number) {
   rooms.game?.send(Transfer.SHOP, { id })
 }
 
-export function pickPokemonProposition(proposition: PkmProposition) {
-  rooms.game?.send(Transfer.POKEMON_PROPOSITION, proposition)
-}
-
-export function pickItem(item: Item) {
-  rooms.game?.send(Transfer.ITEM, item)
+export function pickChoice(choiceId: string, choiceIndex: number) {
+  rooms.game?.send(Transfer.CHOICE, { choiceId, choiceIndex })
 }
 
 export function gameStartRequest(token: string) {
@@ -197,20 +250,106 @@ export function setSpecialRule(rule: SpecialGameRule | null) {
   rooms.preparation?.send(Transfer.CHANGE_SPECIAL_RULE, rule)
 }
 
-export function buyEmotion(params: {
+export async function buyEmotion(params: {
   index: string
   emotion: Emotion
   shiny: boolean
 }) {
-  rooms.lobby?.send(Transfer.BUY_EMOTION, params)
+  const token = await firebase.auth().currentUser?.getIdToken()
+  if (!token) throw new Error("User not authenticated")
+
+  const res = await fetch("/collection/buy-emotion", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(params)
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+
+  const payload = (await res.json()) as { user: IUserMetadataJSON }
+  store.dispatch(setProfile(payload.user))
+  return payload
 }
 
-export function buyBooster(params: { index: string }) {
-  rooms.lobby?.send(Transfer.BUY_BOOSTER, params)
+export async function changeSelectedEmotion(params: {
+  index: string
+  emotion: Emotion | null
+  shiny: boolean
+}) {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  if (!token) throw new Error("User not authenticated")
+
+  const res = await fetch("/collection/change-selected-emotion", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(params)
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+
+  const payload = (await res.json()) as { user: IUserMetadataJSON }
+  store.dispatch(setProfile(payload.user))
+  return payload
 }
 
-export function openBooster() {
-  rooms.lobby?.send(Transfer.OPEN_BOOSTER)
+export async function buyBooster(params: { index: string }) {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  if (!token) throw new Error("User not authenticated")
+
+  const res = await fetch("/boosters/buy", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(params)
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+
+  const payload = (await res.json()) as { user: IUserMetadataJSON }
+  store.dispatch(setProfile(payload.user))
+  return payload
+}
+
+export async function openBooster() {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch("/boosters/open", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+
+  const payload = (await res.json()) as {
+    boosterContent: Booster
+    user: IUserMetadataJSON
+  }
+
+  store.dispatch(setBoosterContent(payload.boosterContent))
+  store.dispatch(setProfile(payload.user))
+
+  return payload
 }
 
 export function showEmote(emote?: string) {
@@ -263,11 +402,99 @@ export function kick(playerId: string) {
   rooms.preparation?.send(Transfer.KICK, playerId)
 }
 
+export async function searchMessages(
+  query: string
+): Promise<import("../../types").IChatV2[]> {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch(
+    `/moderation/chat-search?query=${encodeURIComponent(query)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function renameAccount(
+  uid: string,
+  newName: string
+): Promise<{ displayName: string }> {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch("/moderation/rename-account", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ uid, newName })
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+  return res.json()
+}
+
+export type TwitchBlacklistEntry = {
+  streamerLogin: string
+  reason?: string
+  createdBy: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export async function getTwitchBlacklist(): Promise<TwitchBlacklistEntry[]> {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch("/moderation/twitch-blacklist", {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+  return res.json()
+}
+
+export async function addTwitchBlacklist(
+  streamerLogin: string,
+  reason?: string
+): Promise<void> {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch("/moderation/twitch-blacklist", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ streamerLogin, reason })
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+}
+
+export async function removeTwitchBlacklist(
+  streamerLogin: string
+): Promise<void> {
+  const token = await firebase.auth().currentUser?.getIdToken()
+  const res = await fetch(
+    `/moderation/twitch-blacklist/${encodeURIComponent(streamerLogin)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` }
+    }
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? res.statusText)
+  }
+}
+
 export function ban(params: { uid: string; reason: string }) {
   rooms.lobby?.send(Transfer.BAN, params)
 }
 
-export function unban(params: { uid: string; name: string }) {
+export function unban(params: { uid: string; reason: string }) {
   rooms.lobby?.send(Transfer.UNBAN, params)
 }
 

@@ -1,3 +1,4 @@
+import type Phaser from "phaser"
 import PokemonSprite from "../public/src/game/components/pokemon"
 import { DebugScene } from "../public/src/game/scenes/debug-scene"
 import GameScene from "../public/src/game/scenes/game-scene"
@@ -250,7 +251,7 @@ export type PokemonAnimationConfig = {
   noShadow?: boolean
   attackSprite?: AttackSprite
   hitSprite?: HitSprite | HitSprite[]
-  animationsOriented?: AnimationType[]
+  animationsOriented?: { [anim in AnimationType]?: boolean }
 }
 
 export enum AttackSprite {

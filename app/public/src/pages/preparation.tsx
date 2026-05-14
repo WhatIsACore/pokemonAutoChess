@@ -1,8 +1,8 @@
-import { Client, getStateCallbacks, Room } from "@colyseus/sdk"
+import { getStateCallbacks, Room } from "@colyseus/sdk"
 import firebase from "firebase/compat/app"
-import React, { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router"
 import { MAX_LOADING_TIME } from "../../../config"
 import { GameUser } from "../../../models/colyseus-models/game-user"
 import GameState from "../../../rooms/states/game-state"
@@ -70,38 +70,40 @@ export default function Preparation() {
           try {
             if (!initialized.current) {
               initialized.current = true
-              const cachedReconnectionToken = localStore.get(
-                LocalStoreKeys.RECONNECTION_PREPARATION
-              )?.reconnectionToken
-              if (cachedReconnectionToken) {
-                let r: Room<PreparationState>
-                try {
-                  r = await client.reconnect<PreparationState>(
-                    cachedReconnectionToken
-                  )
-                  if (r.name !== "preparation") {
-                    throw new Error(
-                      `Expected to join a preparation room but joined ${r.name} instead`
+              let r: Room<PreparationState>
+
+              if (rooms.preparation?.connection.isOpen) {
+                r = rooms.preparation
+              } else {
+                const cachedReconnectionToken = localStore.get(
+                  LocalStoreKeys.RECONNECTION_PREPARATION
+                )?.reconnectionToken
+                if (cachedReconnectionToken) {
+                  try {
+                    r = await client.reconnect<PreparationState>(
+                      cachedReconnectionToken
                     )
+                    if (r.name !== "preparation") {
+                      throw new Error(
+                        `Expected to join a preparation room but joined ${r.name} instead`
+                      )
+                    }
+                    dispatch(setConnectionStatus(ConnectionStatus.CONNECTED))
+                  } catch (error) {
+                    logger.error(error)
+                    localStore.delete(LocalStoreKeys.RECONNECTION_PREPARATION)
+                    dispatch(resetPreparation())
+                    navigate("/lobby")
+                    return
                   }
-                  dispatch(setConnectionStatus(ConnectionStatus.CONNECTED))
-                } catch (error) {
-                  logger.error(error)
-                  localStore.delete(LocalStoreKeys.RECONNECTION_PREPARATION)
-                  dispatch(resetPreparation())
+                  joinPreparation(r)
+                } else {
                   navigate("/lobby")
                   return
                 }
-                localStore.set(
-                  LocalStoreKeys.RECONNECTION_PREPARATION,
-                  { reconnectionToken: r.reconnectionToken, roomId: r.roomId },
-                  30
-                )
-                await initialize(r, user.uid)
-                joinPreparation(r)
-              } else {
-                navigate("/lobby")
               }
+
+              await initialize(r, user.uid)
             }
           } catch (error) {
             logger.error(error)
@@ -190,7 +192,9 @@ export default function Preparation() {
           "name",
           "role",
           "title",
-          "ready"
+          "ready",
+          "twitchLogin",
+          "twitchDisplayName"
         ] satisfies NonFunctionPropNames<GameUser>[]
 
         fields.forEach((field) => {

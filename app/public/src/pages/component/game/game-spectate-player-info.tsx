@@ -1,4 +1,3 @@
-import React from "react"
 import { useTranslation } from "react-i18next"
 import { selectSpectatedPlayer, useAppSelector } from "../../../hooks"
 import { Life } from "../icons/life"
@@ -6,6 +5,7 @@ import { Money } from "../icons/money"
 import PokemonPortrait from "../pokemon-portrait"
 import { GameAdditionalPokemonsIcon } from "./game-additional-pokemons"
 import { GameRegionalPokemonsIcon } from "./game-regional-pokemons"
+import { GameStreakInfo } from "./game-streak-info"
 import "./game-spectate-player-info.css"
 
 export default function GameSpectatePlayerInfo() {
@@ -45,6 +45,7 @@ export default function GameSpectatePlayerInfo() {
             <span>
               <Money value={spectatedPlayer.money} />
             </span>
+            <GameStreakInfo />
           </div>
           <div
             style={{
@@ -54,29 +55,29 @@ export default function GameSpectatePlayerInfo() {
             }}
           >
             <span>{t("total")}</span>
-            <span title={t("total_money_earned")}>
+            <span title={t("game_stats.total_money_earned")}>
               <img
                 src="assets/icons/money_total.svg"
                 alt="$"
                 style={{ width: "24px", height: "24px" }}
               />{" "}
-              {spectatedPlayer.totalMoneyEarned}
+              {spectatedPlayer.gameStats.totalMoneyEarned}
             </span>
-            <span title={t("total_player_damage_dealt")}>
+            <span title={t("game_stats.total_player_damage_dealt")}>
               <img
                 src="assets/icons/ATK.png"
                 alt="✊"
                 style={{ width: "24px", height: "24px" }}
               />
-              {spectatedPlayer.totalPlayerDamageDealt}
+              {spectatedPlayer.gameStats.totalPlayerDamageDealt}
             </span>
-            <span title={t("total_reroll_count")}>
+            <span title={t("game_stats.total_reroll_count")}>
               <img
                 src="assets/ui/refresh.svg"
                 alt="↻"
                 style={{ width: "24px", height: "24px" }}
               />{" "}
-              {spectatedPlayer.rerollCount}
+              {spectatedPlayer.gameStats.rerollCount}
             </span>
           </div>
         </div>

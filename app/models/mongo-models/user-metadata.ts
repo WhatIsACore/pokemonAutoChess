@@ -1,8 +1,13 @@
 import { model, Schema } from "mongoose"
+import { ExpThreshold } from "../../config"
+import { GADGETS_UNLOCKED_BY_LEVEL } from "../../config/game/gadgets"
 import { CollectionUtils } from "../../core/collection"
+import { notificationsService } from "../../services/notifications"
 import { Emotion, Role, Title } from "../../types"
 import {
+  IPokemonCollectionItemMongo,
   IUserMetadataJSON,
+  IUserMetadataLean,
   IUserMetadataMongo
 } from "../../types/interfaces/UserMetadata"
 
@@ -12,6 +17,23 @@ const userMetadataSchema = new Schema({
   },
   displayName: {
     type: String
+  },
+  twitchUserId: {
+    type: String
+  },
+  twitchLogin: {
+    type: String,
+    lowercase: true,
+    trim: true
+  },
+  twitchDisplayName: {
+    type: String
+  },
+  twitchVerifiedAt: {
+    type: Date
+  },
+  twitchVerificationRevokedAt: {
+    type: Date
   },
   language: {
     type: String,
@@ -54,7 +76,8 @@ const userMetadataSchema = new Schema({
     default: 0
   },
   eventFinishTime: {
-    type: Date
+    type: Date,
+    sparse: true
   },
   booster: {
     type: Number,
@@ -96,33 +119,6 @@ const userMetadataSchema = new Schema({
       selectedShiny: {
         type: Boolean
       },
-      //LEGACY: Emotions and shinyEmotions are now stored in unlocked field
-      //TO BE REMOVED after migration
-      emotions: {
-        type: [
-          {
-            type: String,
-            enum: Emotion
-          }
-        ],
-        required: false,
-        default: () => {
-          return undefined
-        } // important otherwise mongoose will create empty array
-      },
-      shinyEmotions: {
-        type: [
-          {
-            type: String,
-            enum: Emotion
-          }
-        ],
-        required: false,
-        default: () => {
-          return undefined
-        } // important otherwise mongoose will create empty array
-      },
-      // END LEGACY
       id: {
         type: String
       },
@@ -134,7 +130,41 @@ const userMetadataSchema = new Schema({
   }
 })
 
+userMetadataSchema.index(
+  { displayName: 1 },
+  { collation: { locale: "en", strength: 2 } }
+)
+userMetadataSchema.index({ elo: 1 })
+userMetadataSchema.index({ titles: 1 })
+userMetadataSchema.index({ twitchUserId: 1 }, { unique: true, sparse: true })
+userMetadataSchema.index({ twitchLogin: 1 }, { unique: true, sparse: true })
+
 export default model<IUserMetadataMongo>("UserMetadata", userMetadataSchema)
+
+export function toLeanUserMetadata(
+  user: IUserMetadataLean | IUserMetadataMongo
+): IUserMetadataMongo {
+  const pokemonCollection = new Map<string, IPokemonCollectionItemMongo>()
+  const collectionEntries =
+    user.pokemonCollection instanceof Map
+      ? user.pokemonCollection.entries()
+      : Object.entries(user.pokemonCollection ?? {})
+
+  for (const [key, item] of collectionEntries) {
+    pokemonCollection.set(key, {
+      ...item,
+      unlocked: Buffer.isBuffer(item?.unlocked)
+        ? item.unlocked
+        : item?.unlocked?.buffer
+          ? Buffer.from(item.unlocked.buffer)
+          : Buffer.alloc(5, 0)
+    })
+  }
+  return {
+    ...user,
+    pokemonCollection
+  } as IUserMetadataMongo
+}
 
 export function toUserMetadataJSON(user): IUserMetadataJSON {
   const pokemonCollection: {
@@ -147,4 +177,32 @@ export function toUserMetadataJSON(user): IUserMetadataJSON {
     ...user.toObject(),
     pokemonCollection
   }
+}
+
+export function giveUserExp(user: IUserMetadataMongo, exp: number) {
+  if (user.exp + exp >= ExpThreshold) {
+    user.level += 1
+    user.booster += 1
+    user.exp = user.exp + exp - ExpThreshold
+
+    if (user.level <= 2) {
+      // Add level up notification
+      notificationsService.addNotification(
+        user.uid,
+        "level_up",
+        user.level.toString()
+      )
+    }
+
+    if (user.level in GADGETS_UNLOCKED_BY_LEVEL) {
+      notificationsService.addNotification(
+        user.uid,
+        "new_gadget",
+        GADGETS_UNLOCKED_BY_LEVEL[user.level].name
+      )
+    }
+  } else {
+    user.exp = user.exp + exp
+  }
+  user.exp = !isNaN(user.exp) ? user.exp : 0
 }

@@ -1,16 +1,17 @@
 import { RoomAvailable } from "@colyseus/sdk"
 import firebase from "firebase/compat/app"
-import React, { useState } from "react"
+import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router"
+import { MAX_LOADING_TIME } from "../../../../../config"
 import GameState from "../../../../../rooms/states/game-state"
 import { IGameMetadata, Role, Transfer } from "../../../../../types"
 import { GameMode } from "../../../../../types/enum/Game"
 import { throttle } from "../../../../../utils/function"
 import { useAppDispatch, useAppSelector } from "../../../hooks"
-import { client, leaveRoom, rooms } from "../../../network"
+import { client, joinGame, rooms } from "../../../network"
+import { resetBoosters } from "../../../stores/BoostersStore"
 import { resetLobby } from "../../../stores/LobbyStore"
-import { LocalStoreKeys, localStore } from "../../utils/store"
 import GameRoomItem from "./game-room-item"
 
 export function IngameRoomsList({ gameMode }: { gameMode?: GameMode }) {
@@ -82,7 +83,7 @@ export function IngameRoomsList({ gameMode }: { gameMode?: GameMode }) {
   // Apply filtering and sorting to game rooms
   const filteredGameRooms = sortRooms(filterRooms(gameRooms))
 
-  const joinGame = throttle(async function joinGame(
+  const connectToGame = throttle(async function connectToGame(
     selectedRoom: RoomAvailable<IGameMetadata>
   ) {
     const token = await firebase.auth().currentUser?.getIdToken()
@@ -91,23 +92,16 @@ export function IngameRoomsList({ gameMode }: { gameMode?: GameMode }) {
       const game = await client.joinById<GameState>(selectedRoom.roomId, {
         idToken: token
       })
-      localStore.set(
-        LocalStoreKeys.RECONNECTION_GAME,
-        { reconnectionToken: game.reconnectionToken, roomId: game.roomId },
-        30
-      )
-      await Promise.allSettled([
-        leaveRoom("lobby", true),
-        leaveRoom("game", true)
-      ])
+      joinGame(game, MAX_LOADING_TIME / 1000)
       dispatch(resetLobby())
+      dispatch(resetBoosters())
       navigate("/game")
     }
   }, 1000)
 
   const onRoomAction = (room: RoomAvailable<IGameMetadata>, action: string) => {
     if (action === "join" || action === "spectate") {
-      joinGame(room)
+      connectToGame(room)
     } else if (action === "delete" && user?.role === Role.ADMIN) {
       confirm("Delete room ?") &&
         rooms.lobby?.send(Transfer.DELETE_ROOM, room.roomId)

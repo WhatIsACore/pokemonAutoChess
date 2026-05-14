@@ -1,11 +1,11 @@
 import firebase from "firebase/compat/app"
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router"
 import { AutoSizer } from "react-virtualized-auto-sizer"
 import { List } from "react-window"
-import { IBotLight } from "../../../../../models/mongo-models/bot-v2"
 import { Pkm } from "../../../../../types/enum/Pokemon"
+import { IBotLight } from "../../../models/bot-v2"
 import { authenticateUser } from "../../../network"
 import { cc } from "../../utils/jsx"
 import PokemonPortrait from "../pokemon-portrait"
@@ -17,6 +17,8 @@ const ROW_HEIGHT = 50
 export function BotManagerPanel() {
   const [filterApproved, setFilterApproved] = useState<boolean | undefined>()
   const [filteredPokemon, setFilteredPokemon] = useState<Pkm | "">("")
+  const [filteredAuthor, setFilteredAuthor] = useState<string>("")
+  const [authors, setAuthors] = useState<string[]>([])
   const navigate = useNavigate()
   const { t } = useTranslation()
   return (
@@ -61,13 +63,40 @@ export function BotManagerPanel() {
             onChange={setFilteredPokemon}
           />
         </div>
+        <div>
+          Filter by author:&nbsp;
+          <select
+            value={filteredAuthor}
+            onChange={(e) => setFilteredAuthor(e.target.value)}
+            className="author-filter-input"
+          >
+            <option value="">All authors</option>
+            {authors.map((author) => (
+              <option key={author} value={author}>
+                {author}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      <BotsList approved={filterApproved} filteredPokemon={filteredPokemon} />
+      <BotsList
+        approved={filterApproved}
+        filteredPokemon={filteredPokemon}
+        filteredAuthor={filteredAuthor}
+        onBotsLoaded={(bots) =>
+          setAuthors([...new Set(bots.map((b) => b.author))].sort())
+        }
+      />
     </div>
   )
 }
 
-function BotsList(props: { approved?: boolean; filteredPokemon: Pkm | "" }) {
+function BotsList(props: {
+  approved?: boolean
+  filteredPokemon: Pkm | ""
+  filteredAuthor: string
+  onBotsLoaded: (bots: IBotLight[]) => void
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [bots, setBots] = useState<IBotLight[] | null>(null)
@@ -82,6 +111,7 @@ function BotsList(props: { approved?: boolean; filteredPokemon: Pkm | "" }) {
       .then((res) => res.json())
       .then((data) => {
         setBots(data)
+        props.onBotsLoaded(data)
       })
   }, [props.filteredPokemon])
 
@@ -138,6 +168,7 @@ function BotsList(props: { approved?: boolean; filteredPokemon: Pkm | "" }) {
       .filter(
         (b) => props.approved === undefined || b.approved === props.approved
       )
+      .filter((b) => !props.filteredAuthor || b.author === props.filteredAuthor)
       .sort((a, b) => {
         if (!sortColumn) return 0
         let aValue = a[sortColumn as keyof IBotLight]
@@ -245,7 +276,6 @@ function BotsList(props: { approved?: boolean; filteredPokemon: Pkm | "" }) {
                     rowComponent={BotRow}
                     rowProps={{
                       filteredBots,
-                      t,
                       navigate,
                       onApprove: approveBot,
                       onDelete: deleteBot
@@ -263,7 +293,6 @@ function BotsList(props: { approved?: boolean; filteredPokemon: Pkm | "" }) {
 
 type BotRowData = {
   filteredBots: IBotLight[]
-  t: (key: string) => string
   navigate: (path: string) => void
   onApprove: (botId: string, approved: boolean) => Promise<void>
   onDelete: (bot: IBotLight) => Promise<void>
@@ -273,7 +302,6 @@ function BotRow({
   index,
   style,
   filteredBots,
-  t,
   navigate,
   onApprove,
   onDelete
@@ -282,6 +310,7 @@ function BotRow({
   index: number
   style: React.CSSProperties
 } & BotRowData): React.ReactElement | null {
+  const { t } = useTranslation()
   const b = filteredBots[index]
   return (
     <div
@@ -297,9 +326,9 @@ function BotRow({
       <span style={{ color: "#999", fontSize: "80%" }}>{b.id}</span>
       <span>
         {b.approved ? (
-          <span style={{ color: "lime" }}>{t("yes")}</span>
+          <span style={{ color: "var(--color-fg-positive)" }}>{t("yes")}</span>
         ) : (
-          <span style={{ color: "red" }}>{t("no")}</span>
+          <span style={{ color: "var(--color-fg-negative)" }}>{t("no")}</span>
         )}
       </span>
       <span>

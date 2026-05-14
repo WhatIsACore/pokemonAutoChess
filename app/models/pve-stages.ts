@@ -9,18 +9,31 @@ import {
 } from "../types/enum/Item"
 import { Pkm } from "../types/enum/Pokemon"
 import { Synergy } from "../types/enum/Synergy"
-import { chance, pickNRandomIn, pickRandomIn } from "../utils/random"
-import { values } from "../utils/schemas"
+import {
+  chance,
+  pickNRandomIn,
+  pickRandomIn,
+  randomWeighted
+} from "../utils/random"
+import { schemaValues } from "../utils/schemas"
 import Player from "./colyseus-models/player"
 
+export type PVEStagesNames =
+  | `pkm.${Pkm}`
+  | "tower_duo"
+  | "legendary_birds"
+  | "legendary_beasts"
+  | "super_ancients"
+  | "legendary_giants"
+
 export type PVEStage = {
-  name: string
+  name: PVEStagesNames
   avatar: Pkm
   emotion?: Emotion
   shinyChance?: number
   rewards?: Item[]
-  getRewards?: (player: Player) => Item[]
-  getRewardsPropositions?: (player: Player) => Item[]
+  getRewards?: (player: Player, shinyEncounter: boolean) => Item[]
+  getRewardsPropositions?: (player: Player, shinyEncounter: boolean) => Item[]
   board: [pkm: Pkm, x: number, y: number][]
   marowakItems?: Item[][]
   statBoosts?: { [stat in Stat]?: number }
@@ -86,11 +99,11 @@ export const PVEStages: { [turn: number]: PVEStage } = {
     avatar: Pkm.GYARADOS,
     board: [[Pkm.GYARADOS, 4, 2]],
     marowakItems: [[Item.KINGS_ROCK]],
-    shinyChance: 1 / 100,
-    rewards: ItemComponentsNoFossilOrScarf,
-    getRewards(player: Player) {
-      const randomComponents = pickNRandomIn(ItemComponentsNoFossilOrScarf, 1)
-      return randomComponents
+    shinyChance: 1 / 40,
+    rewards: [...ItemComponentsNoFossilOrScarf, Item.RED_SCALE],
+    getRewards(_player: Player, shinyEncounter: boolean) {
+      if (shinyEncounter) return [Item.RED_SCALE]
+      else return pickNRandomIn(ItemComponentsNoFossilOrScarf, 1)
     }
   },
 
@@ -107,7 +120,12 @@ export const PVEStages: { [turn: number]: PVEStage } = {
     rewards: ItemComponentsNoFossilOrScarf,
     getRewards(player: Player) {
       const rewards: Item[] = []
-      if (values(player.board).some((p) => p.name === Pkm.CHARCADET)) {
+      if (
+        schemaValues(player.board).some((p) => p.name === Pkm.CHARCADET) ||
+        player.pokemonsTrainingInDojo.some(
+          (p) => p.pokemon.name === Pkm.CHARCADET
+        )
+      ) {
         const psyLevel = player.synergies.get(Synergy.PSYCHIC) || 0
         const ghostLevel = player.synergies.get(Synergy.GHOST) || 0
         const armorReceived =
@@ -122,11 +140,18 @@ export const PVEStages: { [turn: number]: PVEStage } = {
       }
       return rewards
     },
-    getRewardsPropositions(_player: Player) {
-      return pickNRandomIn(
-        [...ItemComponentsNoFossilOrScarf, Item.FOSSIL_STONE],
-        3
-      )
+    getRewardsPropositions(_player: Player, shinyEncounter: boolean) {
+      if (shinyEncounter) {
+        return pickNRandomIn(
+          ShinyItems.filter((o) => o !== Item.RED_SCALE),
+          3
+        )
+      } else {
+        return pickNRandomIn(
+          [...ItemComponentsNoFossilOrScarf, Item.FOSSIL_STONE],
+          3
+        )
+      }
     }
   },
 
@@ -144,9 +169,18 @@ export const PVEStages: { [turn: number]: PVEStage } = {
       [Stat.SPE_DEF]: 5
     },
     marowakItems: [[Item.COMET_SHARD], [Item.SACRED_ASH]],
-    rewards: CraftableNoStonesOrScarves,
+    rewards: ItemComponentsNoFossilOrScarf,
     getRewards(player: Player) {
-      return [pickRandomIn(CraftableNoStonesOrScarves)]
+      const componentsWeights = ItemComponentsNoFossilOrScarf.reduce((o, i) => {
+        return { ...o, [i]: player.randomComponentsGiven.includes(i) ? 1 : 2 } // twice the weight if the player doesn't have it yet
+      }, {})
+      const randomComponentsGiven: Item[] = []
+      for (let i = 0; i < 2; i++) {
+        randomComponentsGiven.push(randomWeighted(componentsWeights)!)
+      }
+
+      player.randomComponentsGiven.push(...randomComponentsGiven)
+      return randomComponentsGiven
     }
   },
 
@@ -171,7 +205,7 @@ export const PVEStages: { [turn: number]: PVEStage } = {
     ],
     rewards: CraftableItemsNoScarves,
     getRewards(player: Player) {
-      for (const p of values(player.board)) {
+      for (const p of schemaValues(player.board)) {
         if (p.name === Pkm.ZACIAN) {
           return [Item.RUSTED_SWORD]
         }
@@ -314,9 +348,9 @@ export const PVEStages: { [turn: number]: PVEStage } = {
       [Item.DYNAMAX_BAND],
       [Item.DYNAMAX_BAND]
     ],
-    rewards: ShinyItems,
-    getRewardsPropositions(player: Player) {
-      return pickNRandomIn(ShinyItems, 3)
+    rewards: [Item.RARE_CANDY, Item.SACRED_ASH, Item.GOLD_BOW],
+    getRewards(player: Player) {
+      return [Item.RARE_CANDY, Item.SACRED_ASH, Item.GOLD_BOW]
     }
   }
 }

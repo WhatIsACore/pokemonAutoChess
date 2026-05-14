@@ -1,14 +1,15 @@
 import { RoomAvailable } from "@colyseus/sdk"
 import firebase from "firebase/compat/app"
-import React, { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router"
 import GameState from "../../../rooms/states/game-state"
 import { Transfer } from "../../../types"
 import { throttle } from "../../../utils/function"
 import { joinLobbyRoom } from "../game/lobby-logic"
 import { useAppDispatch, useAppSelector } from "../hooks"
 import { client, leaveRoom, rooms } from "../network"
+import { resetBoosters } from "../stores/BoostersStore"
 import { resetLobby } from "../stores/LobbyStore"
 import {
   clearNotification,
@@ -52,6 +53,7 @@ export default function Lobby() {
     leaveRoom("lobby")
     await firebase.auth().signOut()
     dispatch(resetLobby())
+    dispatch(resetBoosters())
     dispatch(logOut())
     navigate("/")
   }, [dispatch])
@@ -74,11 +76,9 @@ export default function Lobby() {
         { reconnectionToken: game.reconnectionToken, roomId: game.roomId },
         30
       )
-      await Promise.allSettled([
-        leaveRoom("lobby", true),
-        leaveRoom("game", true)
-      ])
+      leaveRoom("lobby", true)
       dispatch(resetLobby())
+      dispatch(resetBoosters())
       navigate("/game")
     }
   }, 1000)
@@ -88,7 +88,7 @@ export default function Lobby() {
       <MainSidebar
         page="main_lobby"
         leave={signOut}
-        leaveLabel={t("sign_out")}
+        leaveLabel={t("auth.sign_out")}
       />
       <div className="lobby-container">
         <MainLobby />

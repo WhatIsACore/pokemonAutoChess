@@ -7,7 +7,7 @@ import { Pkm, PkmFamily, PkmIndex } from "../../types/enum/Pokemon"
 import { SpecialGameRule } from "../../types/enum/SpecialGameRule"
 import { Synergy } from "../../types/enum/Synergy"
 import { isOnBench } from "../../utils/board"
-import { values } from "../../utils/schemas"
+import { schemaValues } from "../../utils/schemas"
 import { PVEStages } from "../pve-stages"
 
 export default class Synergies extends MapSchema<number, Synergy> {
@@ -20,6 +20,10 @@ export default class Synergies extends MapSchema<number, Synergy> {
 
   hasSynergyActive(type: Synergy): boolean {
     return (this.get(type) ?? 0) >= SynergyTriggers[type][0]
+  }
+
+  hasSynergyTriggerOrMore(type: Synergy, level: number): boolean {
+    return (this.get(type) ?? 0) >= SynergyTriggers[type][level - 1]
   }
 
   countActiveSynergies() {
@@ -116,7 +120,7 @@ export function computeSynergies(
             : PkmFamily[pkm.name]
         if (!dragonDoubleTypes.has(family))
           dragonDoubleTypes.set(family, new Set())
-        dragonDoubleTypes.get(family)!.add(values(pkm.types)[1])
+        dragonDoubleTypes.get(family)!.add(schemaValues(pkm.types)[1])
       }
     })
     dragonDoubleTypes.forEach((types) => {
@@ -185,7 +189,7 @@ export function computeSynergies(
       }
 
       if (pkm.name.startsWith("ARCEUS")) {
-        switch (values(pkm.types)[0]) {
+        switch (schemaValues(pkm.types)[0]) {
           case Synergy.BUG:
             pkm.index = PkmIndex[Pkm.ARCEUS_BUG]
             break
@@ -279,10 +283,10 @@ export function getSynergyStep(
 export function getWildChance(player: IPlayer, stageLevel: number): number {
   const isPVE = stageLevel === 0 || stageLevel in PVEStages
   const wildLevel = getSynergyStep(player.synergies, Synergy.WILD)
-  // 8% base chance in PVE stage of at Wild 4 and above
-  const baseChance = isPVE || wildLevel > 0 ? 8 : 0
+  // 6% base chance in PvE stage or if Wild is active
+  const baseChance = isPVE || wildLevel > 0 ? 6 : 0
   // each star of a pokemon with wild synergy gives 0.5% wild chance
-  const nbWildStars = values(player.board)
+  const nbWildStars = schemaValues(player.board)
     .filter((p) => p.types.has(Synergy.WILD) && isOnBench(p) === false)
     .reduce((total, p) => total + p.stars, 0)
   const bonusChance = wildLevel > 0 ? nbWildStars * 0.5 : 0

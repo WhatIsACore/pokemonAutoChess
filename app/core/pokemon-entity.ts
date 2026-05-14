@@ -1,5 +1,4 @@
 import { Schema, SetSchema, type } from "@colyseus/schema"
-import { nanoid } from "nanoid"
 import {
   ARMOR_FACTOR,
   DEFAULT_CRIT_CHANCE,
@@ -43,9 +42,9 @@ import { count, isIn } from "../utils/array"
 import { isOnBench } from "../utils/board"
 import { distanceC, distanceM } from "../utils/distance"
 import { isPlainFunction } from "../utils/function"
-import { clamp, max, min } from "../utils/number"
+import { clamp, min, roundToNDigits } from "../utils/number"
 import { chance, pickNRandomIn, pickRandomIn } from "../utils/random"
-import { values } from "../utils/schemas"
+import { schemaValues } from "../utils/schemas"
 import AttackingState from "./attacking-state"
 import type { Board } from "./board"
 import {
@@ -159,7 +158,7 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     this.count = new Count()
     this.simulation = simulation
 
-    this.id = nanoid()
+    this.id = crypto.randomUUID()
     this.rarity = pokemon.rarity
     this.positionX = positionX
     this.positionY = positionY
@@ -200,7 +199,11 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     this.shieldDamageTaken = 0
     this.healDone = 0
     this.shieldDone = 0
-    this.resetCooldown(500)
+    if (this.types.has(Synergy.DARK) && this.range === 1) {
+      this.cooldown = 300 // ensure dark assassins move first
+    } else {
+      this.resetCooldown(500)
+    }
 
     pokemon.types.forEach((type) => {
       this.types.add(type)
@@ -217,27 +220,37 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
   get canMove(): boolean {
     return (
       !this.status.freeze &&
-      !this.status.sleep &&
+      !(this.status.sleep && this.passive !== Passive.COMATOSE) &&
       !this.status.resurrecting &&
-      !this.status.locked
+      !this.status.locked &&
+      !this.status.tree
     )
   }
 
   get canAttack(): boolean {
     return (
       !this.status.freeze &&
-      !this.status.sleep &&
+      !(this.status.sleep && this.passive !== Passive.COMATOSE) &&
       !this.status.resurrecting &&
-      !this.status.skydiving
+      !this.status.skydiving &&
+      !this.status.tree
     )
   }
 
   get canCast(): boolean {
-    return !this.status.silence && !this.items.has(Item.NULLIFY_BANDANNA)
+    return (
+      !this.status.silence &&
+      !this.items.has(Item.NULLIFY_BANDANNA) &&
+      !this.effects.has(EffectEnum.TELEPORT_NEXT_ATTACK)
+    )
   }
 
   get canBeMoved(): boolean {
-    return !this.status.skydiving && !this.items.has(Item.HEAVY_DUTY_BOOTS)
+    return (
+      !this.status.skydiving &&
+      !this.status.locked &&
+      !this.items.has(Item.HEAVY_DUTY_BOOTS)
+    )
   }
 
   get canBeCopied(): boolean {
@@ -254,7 +267,7 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     targetAllies = false
   ): boolean {
     return (
-      !this.status.resurrecting &&
+      !this.status.untargettable &&
       ((targetAllies && this.team === attacker.team) ||
         (targetEnemies && this.team !== attacker.team) ||
         (attacker.effects.has(EffectEnum.MERCILESS) &&
@@ -394,9 +407,7 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
         attackType === AttackType.SPECIAL
       ) {
         this.status.triggerBurn(3000, this, attacker)
-      }
-      if (attacker?.passive === Passive.BERSERK) {
-        attacker.addAbilityPower(5, attacker, 0, false, false)
+        this.addSpecialDefense(-1, attacker, 0, false)
       }
 
       const damageResult = this.state.handleDamage({
@@ -449,12 +460,12 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
   }
 
   toMovingState() {
-    if (this.passive === Passive.INANIMATE) return
+    if (this.passive === Passive.INANIMATE || this.status.tree) return
     this.changeState(new MovingState())
   }
 
   toAttackingState() {
-    if (this.passive === Passive.INANIMATE) return
+    if (this.passive === Passive.INANIMATE || this.status.tree) return
     this.changeState(new AttackingState())
   }
 
@@ -468,9 +479,7 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     apBoost: number,
     crit: boolean
   ) {
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
     return this.state.addShield(this, value, caster, apBoost, crit)
   }
 
@@ -487,17 +496,7 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
         (this.status.fatigue && baseValue > 0 ? 0.5 : 1)
     )
 
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
-    }
+    value = applyTwistBandBuff(this, value, caster)
 
     if (
       !(value > 0 && this.status.silence) &&
@@ -511,24 +510,18 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
 
   addCritChance(
     value: number,
-    caster: IPokemonEntity,
+    caster: IPokemonEntity | "environment",
     apBoost: number,
     crit: boolean
   ) {
-    value =
-      value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
+    if (caster !== "environment") {
+      value =
+        value *
+        (1 + (apBoost * caster.ap) / 100) *
+        (crit ? caster.critPower : 1)
     }
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     this.critChance += value
 
@@ -542,26 +535,18 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
 
   addCritPower(
     value: number,
-    caster: IPokemonEntity,
+    caster: IPokemonEntity | "environment",
     apBoost: number,
     crit: boolean
   ) {
-    value =
-      (value / 100) *
-      (1 + (apBoost * caster.ap) / 100) *
-      (crit ? caster.critPower : 1)
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
+    if (caster !== "environment") {
+      value =
+        (value / 100) *
+        (1 + (apBoost * caster.ap) / 100) *
+        (crit ? caster.critPower : 1)
     }
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster, 2)
+    value = applyTwistBandBuff(this, value, caster)
 
     this.critPower = min(0)(this.critPower + value)
   }
@@ -576,18 +561,8 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     value = Math.round(
       value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
     )
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
-    }
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     this.maxHP = min(1)(this.maxHP + value)
     if (this.hp > 0) {
@@ -597,9 +572,7 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
 
     if (permanent && !this.isGhostOpponent) {
       const boardPokemon = this.refToBoardPokemon as Pokemon
-      if (boardPokemon.items.has(Item.BIG_EATER_BELT))
-        value = Math.round(value * 1.25)
-      boardPokemon.addMaxHP(value, this.player)
+      boardPokemon.addMaxHP(value)
     }
   }
 
@@ -611,18 +584,8 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
   ) {
     value =
       value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     this.dodge = clamp(this.dodge + value, 0, 0.9)
   }
@@ -637,18 +600,8 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     value = Math.round(
       value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
     )
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
-    }
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     const update = (target: { ap: number }) => {
       target.ap = min(-100)(target.ap + value)
@@ -661,172 +614,131 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     }
 
     if (permanent && !this.isGhostOpponent) {
-      if (this.refToBoardPokemon.items.has(Item.BIG_EATER_BELT))
-        value = Math.round(value * 1.25)
       update(this.refToBoardPokemon)
     }
   }
 
   addLuck(
     value: number,
-    caster: IPokemonEntity,
+    caster: IPokemonEntity | "environment",
     apBoost: number,
     crit: boolean,
     permanent = false
   ) {
-    value =
-      value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
+    if (caster !== "environment") {
+      value =
+        value *
+        (1 + (apBoost * caster.ap) / 100) *
+        (crit ? caster.critPower : 1)
     }
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     const update = (target: { luck: number }) => {
       target.luck = clamp(target.luck + value, -100, +100)
     }
     update(this)
     if (permanent && !this.isGhostOpponent) {
-      if (this.refToBoardPokemon.items.has(Item.BIG_EATER_BELT))
-        value = Math.round(value * 1.25)
       update(this.refToBoardPokemon)
     }
   }
 
   addDefense(
     value: number,
-    caster: IPokemonEntity,
+    caster: IPokemonEntity | "environment",
     apBoost: number,
     crit: boolean,
     permanent = false
   ) {
-    value = Math.round(
-      value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
-    )
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
+    if (caster !== "environment") {
+      value = Math.round(
+        value *
+          (1 + (apBoost * caster.ap) / 100) *
+          (crit ? caster.critPower : 1)
+      )
     }
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     const update = (target: { def: number }) => {
       target.def = min(0)(target.def + value)
     }
     update(this)
     if (permanent && !this.isGhostOpponent) {
-      if (this.refToBoardPokemon.items.has(Item.BIG_EATER_BELT))
-        value = Math.round(value * 1.25)
       update(this.refToBoardPokemon)
     }
   }
 
   addSpecialDefense(
     value: number,
-    caster: IPokemonEntity,
+    caster: IPokemonEntity | "environment",
     apBoost: number,
     crit: boolean,
     permanent = false
   ) {
-    value = Math.round(
-      value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
-    )
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
+    if (caster !== "environment") {
+      value = Math.round(
+        value *
+          (1 + (apBoost * caster.ap) / 100) *
+          (crit ? caster.critPower : 1)
+      )
     }
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     const update = (target: { speDef: number }) => {
       target.speDef = min(0)(target.speDef + value)
     }
     update(this)
     if (permanent && !this.isGhostOpponent) {
-      if (this.refToBoardPokemon.items.has(Item.BIG_EATER_BELT))
-        value = Math.round(value * 1.25)
       update(this.refToBoardPokemon)
     }
   }
 
   addAttack(
     value: number,
-    caster: IPokemonEntity,
+    caster: IPokemonEntity | "environment",
     apBoost: number,
     crit: boolean,
     permanent = false
   ) {
-    value = Math.round(
-      value * (1 + (apBoost * caster.ap) / 100) * (crit ? caster.critPower : 1)
-    )
-
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
+    if (caster !== "environment") {
+      value = Math.round(
+        value *
+          (1 + (apBoost * caster.ap) / 100) *
+          (crit ? caster.critPower : 1)
+      )
     }
-
-    if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-      value = Math.round(value * 1.25)
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     const update = (target: { atk: number }) => {
       target.atk = min(1)(target.atk + value)
     }
     update(this)
     if (permanent && !this.isGhostOpponent) {
-      if (this.refToBoardPokemon.items.has(Item.BIG_EATER_BELT))
-        value = Math.round(value * 1.25)
       update(this.refToBoardPokemon)
     }
   }
 
   addSpeed(
     value: number,
-    caster: IPokemonEntity,
+    caster: IPokemonEntity | "environment",
     apBoost: number,
     crit: boolean,
     permanent = false
   ) {
-    if (
-      value < 0 &&
-      this.items.has(Item.TWIST_BAND) &&
-      caster.team !== this.team
-    ) {
-      value *= -1 // twist band turn debuffs into buffs
-    }
+    value = applyBigEaterBeltStatBuff(this, value, caster)
+    value = applyTwistBandBuff(this, value, caster)
 
     if (this.passive === Passive.MELMETAL) {
       this.addAttack(value * 0.5, caster, apBoost, crit, permanent)
     } else {
-      value =
-        value *
-        (1 + (apBoost * caster.ap) / 100) *
-        (crit ? caster.critPower : 1)
-
-      if (value > 0 && this.items.has(Item.BIG_EATER_BELT)) {
-        value = Math.round(value * 1.25)
+      if (caster !== "environment") {
+        value =
+          value *
+          (1 + (apBoost * caster.ap) / 100) *
+          (crit ? caster.critPower : 1)
       }
 
       const update = (target: { speed: number }) => {
@@ -834,8 +746,6 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
       }
       update(this)
       if (permanent && !this.isGhostOpponent) {
-        if (this.refToBoardPokemon.items.has(Item.BIG_EATER_BELT))
-          value = Math.round(value * 1.25)
         update(this.refToBoardPokemon)
       }
     }
@@ -857,7 +767,12 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
       this.items.add(item)
       this.applyItemEffect(item)
     }
-    if (permanent && !this.isGhostOpponent) {
+    if (
+      permanent &&
+      !this.isGhostOpponent &&
+      this.refToBoardPokemon.items.has(item) == false &&
+      this.refToBoardPokemon.items.size < 3
+    ) {
       this.refToBoardPokemon.items.add(item)
     }
 
@@ -992,20 +907,6 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
       this.addDefense(-2, target, 0, false)
     }
 
-    if (
-      target.effects.has(EffectEnum.BANEFUL_BUNKER) &&
-      distanceC(
-        this.positionX,
-        this.positionY,
-        target.positionX,
-        target.positionY
-      ) === 1
-    ) {
-      const damage = [10, 20, 30][target.stars - 1] ?? 30
-      this.handleSpecialDamage(damage, board, AttackType.SPECIAL, target, false)
-      this.status.triggerPoison(3000, this, target)
-    }
-
     this.getEffects(OnAttackEffect).forEach((effect) => {
       effect.apply({
         pokemon: this,
@@ -1102,9 +1003,9 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
           ? count(this.player.items, Item.ICY_ROCK)
           : 0
 
-      const freezeChance = 0.25 + nbIcyRocks * 0.05
+      const freezeChance = 0.2 + nbIcyRocks * 0.05
       if (chance(freezeChance, this)) {
-        target.status.triggerFreeze(2000, target)
+        target.status.triggerFreeze(2000, target, this)
       }
     }
 
@@ -1272,7 +1173,9 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     this.count.damageReceivedCount++
 
     // Berries trigger
-    const berry = values(this.items).find((item) => Berries.includes(item))
+    const berry = schemaValues(this.items).find((item) =>
+      Berries.includes(item)
+    )
     if (berry && this.hp > 0 && this.hp < 0.5 * this.maxHP) {
       this.eatBerry(berry)
     }
@@ -1299,71 +1202,6 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
         isRetaliation
       })
     })
-  }
-
-  onCriticalAttack({
-    target,
-    board,
-    damage
-  }: {
-    target: PokemonEntity
-    board: Board
-    damage: number
-  }) {
-    // proc fairy splash damage for both the attacker and the target
-    if (
-      target.fairySplashCooldown === 0 &&
-      target.hasSynergyEffect(Synergy.FAIRY)
-    ) {
-      let shockDamageFactor = 0.3
-      if (target.effects.has(EffectEnum.AROMATIC_MIST)) {
-        shockDamageFactor *= 1.2
-      } else if (target.effects.has(EffectEnum.FAIRY_WIND)) {
-        shockDamageFactor *= 1.4
-      } else if (target.effects.has(EffectEnum.STRANGE_STEAM)) {
-        shockDamageFactor *= 1.6
-      } else if (target.effects.has(EffectEnum.MOON_FORCE)) {
-        shockDamageFactor *= 1.8
-      }
-
-      const shockDamage = shockDamageFactor * damage
-      target.count.fairyCritCount++
-      target.fairySplashCooldown = 250
-
-      const distance = distanceC(
-        this.positionX,
-        this.positionY,
-        target.positionX,
-        target.positionY
-      )
-
-      if (distance <= 1 && this.items.has(Item.PROTECTIVE_PADS) === false) {
-        // melee range
-        this.handleDamage({
-          damage: shockDamage,
-          board,
-          attackType: AttackType.SPECIAL,
-          attacker: target,
-          isRetaliation: true,
-          shouldTargetGainMana: true
-        })
-      }
-    }
-
-    if (this.items.has(Item.SCOPE_LENS)) {
-      const ppStolen = max(target.pp)(10)
-      this.addPP(ppStolen, this, 0, false)
-      target.addPP(-ppStolen, this, 0, false)
-      target.count.manaBurnCount++
-    }
-
-    if (this.items.has(Item.RAZOR_FANG)) {
-      target.status.triggerArmorReduction(2000, target)
-    }
-
-    if (target.items.has(Item.BABIRI_BERRY)) {
-      target.eatBerry(Item.BABIRI_BERRY)
-    }
   }
 
   // called after killing an opponent (does not proc if resurrection)
@@ -1454,28 +1292,80 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
       .forEach((p) => p?.addPP(p.maxPP - p.pp, p, 0, false))
   }
 
-  flyAway(board: Board) {
-    const flyAwayCell = board.getFlyAwayCell(this.positionX, this.positionY)
-    if (flyAwayCell) {
-      if (this.passive === Passive.GALE_WINGS) {
-        board
-          .getCellsBetween(
-            this.positionX,
-            this.positionY,
-            flyAwayCell.x,
-            flyAwayCell.y
+  flyAway(
+    board: Board,
+    shouldSkydive = this.effects.has(EffectEnum.SKYDIVE),
+    shouldProtect = this.effects.has(EffectEnum.FEATHER_DANCE) ||
+      this.effects.has(EffectEnum.SKYDIVE) ||
+      this.effects.has(EffectEnum.MAX_AIRSTREAM)
+  ): { x: number; y: number; target: PokemonEntity } | null {
+    const flyAwayCell = board.getFlyAwayCell(this)
+
+    if (flyAwayCell && this.passive === Passive.GALE_WINGS) {
+      board
+        .getCellsBetween(
+          this.positionX,
+          this.positionY,
+          flyAwayCell.x,
+          flyAwayCell.y
+        )
+        .forEach((cell) => {
+          board.addBoardEffect(
+            cell.x,
+            cell.y,
+            EffectEnum.EMBER,
+            this.simulation
           )
-          .forEach((cell) => {
-            board.addBoardEffect(
-              cell.x,
-              cell.y,
-              EffectEnum.EMBER,
-              this.simulation
-            )
+        })
+    }
+
+    if (shouldProtect) this.status.triggerProtect(2000)
+    if (shouldSkydive && flyAwayCell?.target) {
+      this.broadcastAbility({
+        skill: "FLYING_TAKEOFF",
+        targetX: flyAwayCell.target.positionX,
+        targetY: flyAwayCell.target.positionY
+      })
+      this.skydiveTo(flyAwayCell.x, flyAwayCell.y, board)
+      this.setTarget(flyAwayCell.target)
+      this.commands.push(
+        new DelayedCommand(() => {
+          this.broadcastAbility({
+            skill: "FLYING_SKYDIVE",
+            positionX: flyAwayCell.x,
+            positionY: flyAwayCell.y,
+            targetX: flyAwayCell.target.positionX,
+            targetY: flyAwayCell.target.positionY
           })
-      }
+        }, 500)
+      )
+      this.commands.push(
+        new DelayedCommand(() => {
+          if (flyAwayCell.target?.hp > 0) {
+            flyAwayCell.target.handleSpecialDamage(
+              1.5 * this.atk,
+              board,
+              AttackType.PHYSICAL,
+              this,
+              chance(this.critChance / 100, this),
+              false
+            )
+          }
+        }, 1000)
+      )
+    } else if (flyAwayCell) {
       this.moveTo(flyAwayCell.x, flyAwayCell.y, board, false)
     }
+
+    // make enemies lose aggro after target flies away
+    board.cells
+      .filter(
+        (e): e is PokemonEntity =>
+          e instanceof PokemonEntity && e.hp > 0 && e.targetEntityId === this.id
+      )
+      .forEach((e) => e.setTarget(null))
+
+    return flyAwayCell
   }
 
   applyStat(stat: Stat, value: number, permanent = false) {
@@ -1558,12 +1448,12 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
           ? this.simulation.blueTeam
           : this.simulation.redTeam
       if (!team) return
-      const alliesAlive: IPokemonEntity[] = values(team).filter(
+      const alliesAlive: IPokemonEntity[] = schemaValues(team).filter(
         (e) => e.hp > 0 || e.status.resurrecting
       )
       let koAllies: Pokemon[] = []
       if (this.player) {
-        koAllies = values(this.player.board).filter(
+        koAllies = schemaValues(this.player.board).filter(
           (p) =>
             p.id !== this.refToBoardPokemon.id &&
             !isOnBench(p) &&
@@ -1647,11 +1537,17 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     this.shield = 0
   }
 
-  eatBerry(berry: Item, stealedFrom?: PokemonEntity, inPuffin = false) {
+  eatBerry(
+    berry: Item,
+    stealedFrom?: PokemonEntity,
+    healToShield = false,
+    apScaling = 0,
+    crit = false
+  ) {
     const heal = (val) =>
-      inPuffin
-        ? this.addShield(val, this, 0, false)
-        : this.handleHeal(val, this, 0, false)
+      healToShield
+        ? this.addShield(val, this, apScaling, crit)
+        : this.handleHeal(val, this, apScaling, crit)
 
     switch (berry) {
       case Item.AGUAV_BERRY:
@@ -1753,10 +1649,19 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
         heal(50)
         this.status.triggerProtect(2000)
         break
+      case Item.NANAB_BERRY:
+        heal(50)
+        if (this.player && !this.simulation.isGhostBattle) {
+          this.player.addMoney(1, true, this)
+          this.count.moneyCount += 1
+        }
+        break
       case Item.GOLDEN_NANAB_BERRY:
         heal(min(50)(0.5 * this.maxHP))
-        if (this.player && !this.simulation.isGhostBattle)
+        if (this.player && !this.simulation.isGhostBattle) {
           this.player.addMoney(5, true, this)
+          this.count.moneyCount += 5
+        }
         break
       case Item.GOLDEN_RAZZ_BERRY:
         heal(min(50)(0.5 * this.maxHP))
@@ -1806,33 +1711,21 @@ export class PokemonEntity extends Schema implements IPokemonEntity {
     targetX?: number
     targetY?: number
     delay?: number
-  }) {
+  } = {}) {
     if (!this.simulation || !this.simulation.room) {
       return
     }
-    const room = this.simulation.room
-    const players = room.state.players
-    for (const client of room.clients) {
-      if (client.userData?.spectatedPlayerId) {
-        const spectatedPlayer = players.get(client.userData.spectatedPlayerId)
-        if (
-          spectatedPlayer &&
-          spectatedPlayer.simulationId === this.simulation.id
-        ) {
-          client.send(Transfer.ABILITY, {
-            id: this.simulation.id,
-            skill,
-            ap,
-            positionX,
-            positionY,
-            orientation,
-            targetX,
-            targetY,
-            delay
-          })
-        }
-      }
-    }
+    this.simulation.broadcastToSpectators(Transfer.ABILITY, {
+      id: this.simulation.id,
+      skill,
+      ap,
+      positionX,
+      positionY,
+      orientation,
+      targetX,
+      targetY,
+      delay
+    })
   }
 
   changePassive(newPassive: Passive) {
@@ -1932,4 +1825,34 @@ export function getMoveSpeed(pokemon: IPokemonEntity): number {
   // at max 300 speed, it's 3.5 = 143ms per cell
   const speed = pokemon.status.paralysis ? pokemon.speed / 2 : pokemon.speed
   return 0.5 + speed / 100
+}
+
+function applyBigEaterBeltStatBuff(
+  pokemon: PokemonEntity,
+  value: number,
+  caster: IPokemonEntity | "environment",
+  nbDigits: number = 0
+) {
+  const isBuffOrBuffLost =
+    value > 0 ||
+    (value < 0 && caster !== "environment" && caster.team === pokemon.team)
+  if (isBuffOrBuffLost && pokemon.items.has(Item.BIG_EATER_BELT)) {
+    value = roundToNDigits(value * 1.25, nbDigits, "down")
+  }
+  return value
+}
+
+function applyTwistBandBuff(
+  pokemon: PokemonEntity,
+  value: number,
+  caster: IPokemonEntity | "environment"
+) {
+  if (
+    value < 0 &&
+    pokemon.items.has(Item.TWIST_BAND) &&
+    (caster === "environment" || caster.team !== pokemon.team)
+  ) {
+    value *= -1 // twist band turn debuffs into buffs
+  }
+  return value
 }

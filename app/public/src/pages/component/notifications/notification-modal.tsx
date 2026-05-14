@@ -1,9 +1,14 @@
-import React, { useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { GADGETS, GadgetName } from "../../../../../config/game/gadgets"
 import { INotification } from "../../../../../types/notifications"
 import { getRankLabel } from "../../../../../types/strings/Strings"
 import { Modal } from "../modal/modal"
 import "./notification-modal.css"
+import { Theme } from "../../../../../config/game/theme"
+import { Title } from "../../../../../types"
+import { EloRank } from "../../../../../types/enum/EloRank"
+import { ExpeditionType } from "../../../../../types/enum/Expedition"
 
 interface NotificationModalProps {
   notifications: INotification[]
@@ -53,10 +58,23 @@ export function NotificationModal({
     switch (notification.type) {
       case "new_title":
         return t("notification.new_title_title")
+      case "new_gadget":
+        return t("notification.new_gadget_title")
+      case "new_theme":
+        return t("notification.new_theme_title")
       case "elo_rank_change":
         return t("notification.elo_rank_change_title")
       case "victory_road_finished":
         return t("notification.victory_road_finished_title")
+      case "expedition_completed":
+        return t("notification.expedition_completed_title")
+      case "tournament_finished":
+        if (notification.message === "1") {
+          return t("notification.tournament_win_title")
+        } else if (+notification.message <= 8) {
+          return t("notification.tournament_finalist_title")
+        }
+        return t("notification.tournament_finished_title")
       case "level_up":
       default:
         return t("notification.level_up_title")
@@ -71,15 +89,43 @@ export function NotificationModal({
         })
       case "new_title":
         return t("notification.new_title_message", {
-          title: t(`title.${notification.message}`),
-          description: t(`title_description.${notification.message}`)
+          title: t(`title.${notification.message as Title}`),
+          description: t(`title_description.${notification.message as Title}`)
+        })
+      case "new_gadget":
+        return t("notification.new_gadget_message", {
+          gadget: t(`gadget.${notification.message as GadgetName}`),
+          description: t(`gadget.${notification.message as GadgetName}_desc`)
+        })
+      case "new_theme":
+        return t("notification.new_theme_message", {
+          theme: t(`theme.${notification.message as Theme}`)
         })
       case "elo_rank_change":
         return t("notification.elo_rank_change_message", {
-          rank: t(`elorank.${notification.message}`)
+          rank: t(`elorank.${notification.message as EloRank}`)
         })
       case "victory_road_finished":
         return t("notification.victory_road_finished_message", {
+          place: getRankLabel(Number(notification.message))
+        })
+      case "expedition_completed": {
+        const [expeditionType, rank, points] = notification.message.split("|")
+        return t("notification.expedition_completed_message", {
+          expedition: t(`expeditions.${expeditionType as ExpeditionType}`),
+          rank,
+          points
+        })
+      }
+      case "tournament_finished":
+        if (notification.message === "1") {
+          return t("notification.tournament_win_message")
+        } else if (+notification.message <= 8) {
+          return t("notification.tournament_finalist_message", {
+            place: getRankLabel(Number(notification.message))
+          })
+        }
+        return t("notification.tournament_finished_message", {
           place: getRankLabel(Number(notification.message))
         })
       default:
@@ -91,10 +137,25 @@ export function NotificationModal({
     switch (notification.type) {
       case "new_title":
         return `/assets/titles/${notification.message}.svg`
+      case "new_gadget":
+        return `/assets/ui/${GADGETS[notification.message as keyof typeof GADGETS].icon}.svg`
+      case "new_theme":
+        return `/assets/ui/palette.svg`
       case "elo_rank_change":
         return `/assets/ranks/${notification.message}.svg`
       case "victory_road_finished":
         return `/assets/notifications/victory-road.png`
+      case "expedition_completed": {
+        const [expeditionType, rank] = notification.message.split("|")
+        return `/assets/notifications/${expeditionType}_${rank}.jpg`
+      }
+      case "tournament_finished":
+        if (notification.message === "1") {
+          return `/assets/notifications/tournament_win.svg`
+        } else if (+notification.message <= 8) {
+          return `/assets/notifications/tournament_finalist.svg`
+        }
+        return `/assets/notifications/tournament_finish.svg`
       case "level_up":
       default:
         return "/assets/ui/booster.png"

@@ -1,16 +1,16 @@
 import { Dispatcher } from "@colyseus/command"
-import { Client, ClientArray, CloseCode, Room, updateLobby } from "colyseus"
+import { Client, ClientArray, CloseCode, Delayed, Room } from "colyseus"
 import admin from "firebase-admin"
 import { UserRecord } from "firebase-admin/lib/auth/user-record"
 import { MAX_PLAYERS_PER_GAME } from "../config"
-import { IBot } from "../models/mongo-models/bot-v2"
 import UserMetadata from "../models/mongo-models/user-metadata"
 import { IPreparationMetadata, Role, Transfer } from "../types"
 import { CloseCodes } from "../types/enum/CloseCodes"
 import { EloRank } from "../types/enum/EloRank"
 import { BotDifficulty, GameMode } from "../types/enum/Game"
+import type { IBot } from "../types/models/bot-v2"
 import { logger } from "../utils/logger"
-import { values } from "../utils/schemas"
+import { schemaValues } from "../utils/schemas"
 import {
   OnAddBotCommand,
   OnChangeNoEloCommand,
@@ -33,6 +33,7 @@ export default class PreparationRoom extends Room<{ state: PreparationState }> {
   dispatcher: Dispatcher<this>
   clients!: ClientArray<Client<{ auth: UserRecord }>>
   private roomPassword: string | null
+  autoStartTimeout: Delayed | null = null
 
   constructor() {
     super()
@@ -120,7 +121,7 @@ export default class PreparationRoom extends Room<{ state: PreparationState }> {
     }
 
     if (options.autoStartDelayInSeconds) {
-      this.clock.setTimeout(() => {
+      this.autoStartTimeout = this.clock.setTimeout(() => {
         if (this.state.gameStartedAt != null) {
           // game has started but the prep room is still open
           logger.debug(
@@ -135,7 +136,7 @@ export default class PreparationRoom extends Room<{ state: PreparationState }> {
             this.presence.publish("tournament-match-end", {
               tournamentId: this.metadata?.tournamentId,
               bracketId: this.metadata?.bracketId,
-              players: values(this.state.users).map((p) => ({
+              players: schemaValues(this.state.users).map((p) => ({
                 id: p.uid,
                 rank: 1
               }))
@@ -358,7 +359,7 @@ export default class PreparationRoom extends Room<{ state: PreparationState }> {
       }
 
       const isAlreadyInRoom = this.state.users.has(user.uid)
-      const numberOfHumanPlayers = values(this.state.users).filter(
+      const numberOfHumanPlayers = schemaValues(this.state.users).filter(
         (u) => !u.isBot
       ).length
 
@@ -411,14 +412,20 @@ export default class PreparationRoom extends Room<{ state: PreparationState }> {
   }
 
   async onDrop(client: Client, code: number) {
-    /*if (client.auth && client.auth.displayName) {
-      logger.info(
-        `${client.auth.displayName} ${client.id} is leaving preparation room`
-      )
-    }*/
-    this.state.abortOnPlayerLeave?.abort()
-    // allow disconnected client to reconnect into this room until 10 seconds
-    await this.allowReconnection(client, 10)
+    try {
+      /*if (client.auth && client.auth.displayName) {
+        logger.info(
+          `${client.auth.displayName} ${client.id} is leaving preparation room`
+        )
+      }*/
+      this.state.abortOnPlayerLeave?.abort()
+      // allow disconnected client to reconnect into this room until 10 seconds
+      await this.allowReconnection(client, 10)
+    } catch (e) {
+      /*if (client && client.auth && client.auth.displayName) {
+        logger.info(`${client.auth.displayName} left preparation room`)
+      }*/
+    }
   }
 
   async onLeave(client: Client, code: number) {
@@ -428,6 +435,9 @@ export default class PreparationRoom extends Room<{ state: PreparationState }> {
           `${client.auth.displayName} ${client.id} leave preparation room`
         )
       }*/
+    if (this.state.gameStartedAt === null) {
+      this.state.abortOnPlayerLeave?.abort()
+    }
     this.dispatcher.dispatch(new OnLeaveCommand(), { client, consented })
   }
 
@@ -462,6 +472,7 @@ export default class PreparationRoom extends Room<{ state: PreparationState }> {
 
   onRoomDeleted(roomId) {
     if (this.roomId === roomId) {
+      this.autoStartTimeout?.clear()
       this.disconnect(CloseCodes.ROOM_DELETED)
     }
   }

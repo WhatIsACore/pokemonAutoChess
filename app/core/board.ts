@@ -13,6 +13,7 @@ export type Cell = {
   y: number
   value: PokemonEntity | undefined
 }
+
 export class Board {
   rows: number
   columns: number
@@ -54,7 +55,9 @@ export class Board {
         const effectsOnNewCell = this.boardEffects[index]
         effectsOnNewCell.forEach((effectOnNewCell) => {
           if (!entity.effects.has(EffectEnum.IMMUNITY_BOARD_EFFECTS)) {
-            //logger.debug(`${value.name} gained effect ${effectOnNewCell} by moving into board effect`)
+            // logger.debug(
+            //   `${entity.name} gained effect ${effectOnNewCell} by moving into board effect`
+            // )
             entity.effects.add(effectOnNewCell)
           }
         })
@@ -231,12 +234,17 @@ export class Board {
     return cells
   }
 
-  getCellsInRange(cellX: number, cellY: number, range: number) {
+  getCellsInRange(
+    cellX: number,
+    cellY: number,
+    range: number,
+    includesCenter: boolean
+  ) {
     const cells = new Array<Cell>()
     range = Math.floor(Math.abs(range))
     for (let y = 0; y < this.rows; y++) {
       for (let x = 0; x < this.columns; x++) {
-        if (x == cellX && y == cellY) continue
+        if (x == cellX && y == cellY && !includesCenter) continue
         const distance = distanceC(cellX, cellY, x, y)
         if (this.isOnBoard(x, y) && distance <= range) {
           cells.push({ x, y, value: this.cells[this.columns * y + x] })
@@ -260,7 +268,7 @@ export class Board {
     cellX: number,
     cellY: number,
     radius: number,
-    includesCenter = false
+    includesCenter: boolean
   ) {
     // see https://i.imgur.com/jPzf35e.png
     const cells = new Array<Cell>()
@@ -372,30 +380,131 @@ export class Board {
     }
   }
 
-  getFlyAwayCell(x: number, y: number): Cell | null {
-    const cx = Math.round((x + this.columns * 0.5) % this.columns)
-    const cy = Math.round((y + this.rows * 0.5) % this.rows)
-    let radius = 1
-    const candidates: Cell[] = [
-      { x: cx, y: cy, value: this.getEntityOnCell(cx, cy) }
-    ]
-    while (candidates[0].value !== undefined && radius < 5) {
-      candidates.shift()
-      if (candidates.length === 0) {
-        candidates.push(...this.getCellsInRadius(cx, cy, radius))
-        radius++
+  getFlyAwayCell(
+    entity: PokemonEntity
+  ): { x: number; y: number; target: PokemonEntity } | null {
+    // if no cells matching the conditions can be found, fallback to getSafePlaceAwayFrom algorithm
+    const fallback = () => {
+      const safeCell = this.getSafePlaceAwayFrom(
+        entity.targetX ?? entity.positionX,
+        entity.targetY ?? entity.positionY,
+        null,
+        entity.range
+      )
+      if (!safeCell) return null
+      const target = this.getClosestEnemy(safeCell.x, safeCell.y, entity.team)
+      if (!target) return null
+      return {
+        x: safeCell.x,
+        y: safeCell.y,
+        target: target
       }
     }
 
-    return candidates[0].value === undefined ? candidates[0] : null
+    const enemies = this.cells.filter(
+      (e): e is PokemonEntity =>
+        e instanceof PokemonEntity && e.hp > 0 && e.team !== entity.team
+    )
+
+    if (enemies.length === 0) {
+      return null
+    }
+
+    // Step 1: take an array of all unoccupied board cells
+    const availableCells: Cell[] = []
+    this.forEach((cellX, cellY, value) => {
+      if (value === undefined) {
+        availableCells.push({ x: cellX, y: cellY, value })
+      }
+    })
+
+    // Step 2: filter out the cells in entity's attack range
+    const cellsBeyondEntityRange = availableCells.filter(
+      (cell) =>
+        distanceC(cell.x, cell.y, entity.positionX, entity.positionY) >
+        entity.range
+    )
+
+    // Step 3: filter the cells that are in attack_range of at least one enemy.
+    const cellsWithTarget = cellsBeyondEntityRange
+      .map((cell) => {
+        const enemiesAtRange = enemies.filter(
+          (enemy) =>
+            enemy.hp > 0 &&
+            enemy.isTargettableBy(entity) &&
+            distanceC(cell.x, cell.y, enemy.positionX, enemy.positionY) <=
+              entity.range
+        )
+        if (enemiesAtRange.length === 0) {
+          return null
+        }
+        // keep a reference to the lowest HP% enemy between those.
+        const target = enemiesAtRange.reduce((lowest, enemy) => {
+          const enemyHpPercent = enemy.hp / enemy.maxHP
+          const lowestHpPercent = lowest.hp / lowest.maxHP
+          return enemyHpPercent < lowestHpPercent ? enemy : lowest
+        })
+
+        // compute the number of enemies that are in enemy attack range of this cell
+        const enemyThreatCount = enemies.filter(
+          (enemy) =>
+            distanceC(cell.x, cell.y, enemy.positionX, enemy.positionY) <=
+            enemy.range
+        ).length
+
+        return {
+          cell,
+          target,
+          enemyThreatCount,
+          distance: distanceM(
+            cell.x,
+            cell.y,
+            entity.positionX,
+            entity.positionY
+          ) //  compute the distance to current position
+        }
+      })
+      .filter((candidate) => candidate != null)
+
+    if (cellsWithTarget.length === 0) {
+      return fallback()
+    }
+
+    // Step 4: filter the cells with the lowest amount of enemies that can attack them
+    const minThreatCount = Math.min(
+      ...cellsWithTarget.map((candidate) => candidate.enemyThreatCount)
+    )
+
+    const safestCells = cellsWithTarget.filter(
+      (candidate) => candidate.enemyThreatCount === minThreatCount
+    )
+
+    // Step 5: filter the cells with the highest distance to current position
+    const maxDistance = Math.max(
+      ...safestCells.map((candidate) => candidate.distance)
+    )
+
+    const farthestSafestCells = safestCells.filter(
+      (candidate) => candidate.distance === maxDistance
+    )
+
+    // Step 6: pick one of the remaining cells at random as destination
+    const selectedDestination = pickRandomIn(farthestSafestCells)
+
+    return {
+      x: selectedDestination.cell.x,
+      y: selectedDestination.cell.y,
+      target: selectedDestination.target
+    }
   }
 
   getSafePlaceAwayFrom(
     originX: number,
     originY: number,
-    specificSide: Team | null = null
+    specificSide: Team | null = null,
+    maxDistance?: number
   ): { x: number; y: number; distance: number } | null {
-    const candidateCells = new Array<{
+    let candidateCells = new Array<{
       distance: number
       x: number
       y: number
@@ -423,7 +532,13 @@ export class Board {
       }
     })
 
-    candidateCells.sort((a, b) => b.distance - a.distance)
+    candidateCells = candidateCells
+      .filter(
+        (cell) =>
+          maxDistance === undefined ||
+          distanceC(cell.x, cell.y, originX, originY) <= maxDistance
+      )
+      .sort((a, b) => b.distance - a.distance)
     return candidateCells[0] ?? null
   }
 
@@ -454,14 +569,16 @@ export class Board {
   getFarthestTargetCoordinateAvailablePlace(
     pokemon: IPokemonEntity,
     targetAlly: boolean = false
-  ):
-    | { x: number; y: number; distance: number; target: PokemonEntity }
-    | undefined {
+  ): { x: number; y: number; distance: number; target: PokemonEntity } | null {
     let maxTargetDistance = 0
     let maxCellDistance = 0
-    let selectedCell:
-      | { x: number; y: number; distance: number; target: PokemonEntity }
-      | undefined
+    let selectedCell: {
+      x: number
+      y: number
+      distance: number
+      target: PokemonEntity
+    } | null = null
+    let farthestTarget: PokemonEntity | undefined
 
     this.forEach((x: number, y: number, entity: PokemonEntity | undefined) => {
       if (entity && entity.isTargettableBy(pokemon, !targetAlly, targetAlly)) {
@@ -472,6 +589,8 @@ export class Board {
           entity.positionY
         )
         if (targetDistance > maxTargetDistance) {
+          maxTargetDistance = targetDistance
+          farthestTarget = entity
           maxCellDistance = 0
           const freeCells = this.getAdjacentCells(x, y).filter(
             (cell) => this.getEntityOnCell(cell.x, cell.y) === undefined
@@ -493,12 +612,21 @@ export class Board {
               }
             }
           }
-          if (selectedCell?.target === entity) {
-            maxTargetDistance = targetDistance
-          }
         }
       }
     })
+
+    if (selectedCell === null && farthestTarget) {
+      // no adjacent free cells around farthest targets, fallback to closest free cell of farthest target
+      const freeCell = this.getClosestAvailablePlace(
+        farthestTarget.positionX,
+        farthestTarget.positionY
+      )
+      if (freeCell) {
+        selectedCell = { ...freeCell, target: farthestTarget }
+      }
+    }
+
     return selectedCell
   }
 
@@ -513,6 +641,7 @@ export class Board {
     if (entityOnCell) {
       entityOnCell.effects.add(effect)
     }
+
     if (!previousEffects.has(effect)) {
       this.boardEffects[y * this.columns + x].add(effect)
       // show anim effect client side
@@ -525,18 +654,36 @@ export class Board {
     }
   }
 
-  clearBoardEffect(x: number, y: number, simulation: Simulation) {
+  clearBoardEffect(
+    x: number,
+    y: number,
+    simulation: Simulation,
+    effectToClear?: BoardEffect
+  ) {
     const index = y * this.columns + x
     const existingEffects = this.boardEffects[index]
     const entityOnCell = this.getEntityOnCell(x, y)
 
-    this.boardEffects[index].clear()
-    if (entityOnCell) {
-      existingEffects.forEach((effect) => entityOnCell.effects.delete(effect))
-    }
-    if (existingEffects.size > 0) {
-      // clean effect anim client side
-      simulation.room.broadcast(Transfer.BOARD_EVENT, {
+    if (effectToClear) {
+      // Clear specific effect
+      existingEffects.delete(effectToClear)
+      if (entityOnCell) {
+        entityOnCell.effects.delete(effectToClear)
+      }
+      logger.debug(`Clearing board effect ${effectToClear} at (${x}, ${y})`)
+      simulation.room.broadcast(Transfer.CLEAR_BOARD_EVENT, {
+        simulationId: simulation.id,
+        effect: effectToClear,
+        x,
+        y
+      })
+    } else {
+      // Clear all effects
+      existingEffects.clear()
+      if (entityOnCell) {
+        existingEffects.forEach((effect) => entityOnCell.effects.delete(effect))
+      }
+      simulation.room.broadcast(Transfer.CLEAR_BOARD_EVENT, {
         simulationId: simulation.id,
         effect: null,
         x,

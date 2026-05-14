@@ -2,10 +2,9 @@ import { t } from "i18next"
 import React, { useEffect, useMemo, useState } from "react"
 import { AutoSizer } from "react-virtualized-auto-sizer"
 import { List, useDynamicRowHeight } from "react-window"
-import {
-  fetchMetaV2,
-  IMetaV2
-} from "../../../../../models/mongo-models/meta-v2"
+import { Pkm } from "../../../../../types/enum/Pokemon"
+import { fetchMetaV2, IMetaV2 } from "../../../models/meta-v2"
+import { PokemonTypeahead } from "../typeahead/pokemon-typeahead"
 import TeamComp from "./team-comp"
 import "./composition-report.css"
 
@@ -14,6 +13,7 @@ const ROW_HEIGHT = 300
 export function CompositionReport() {
   const [loading, setLoading] = useState<boolean>(true)
   const [meta, setMeta] = useState<IMetaV2[]>([])
+  const [selectedPkm, setSelectedPkm] = useState<Pkm | "">("")
 
   useEffect(() => {
     fetchMetaV2().then((res) => {
@@ -23,12 +23,36 @@ export function CompositionReport() {
   }, [])
   const [rankingBy, setRanking] = useState<string>("mean_rank")
 
+  const popularPokemonOptions = useMemo(() => {
+    const pokemonPopularity = new Map<Pkm, number>()
+
+    meta.forEach((team) => {
+      Object.entries(team.mean_team?.pokemons ?? {}).forEach(
+        ([pokemon, data]) => {
+          const popularity = (data?.frequency ?? 0) * team.count
+          const current = pokemonPopularity.get(pokemon as Pkm) ?? 0
+          pokemonPopularity.set(pokemon as Pkm, current + popularity)
+        }
+      )
+    })
+
+    return [...pokemonPopularity.keys()].sort((a, b) => a.localeCompare(b))
+  }, [meta])
+
   const sortedMeta = useMemo(() => {
-    return [...meta].sort((a, b) => {
-      const order = rankingBy == "count" || rankingBy == "winrate" ? -1 : 1
+    const filteredMeta = selectedPkm
+      ? meta.filter((team) => {
+          const pokemons = team.mean_team?.pokemons ?? {}
+          const data = pokemons[selectedPkm]
+          return (data?.frequency ?? 0) > 0
+        })
+      : meta
+
+    return [...filteredMeta].sort((a, b) => {
+      const order = rankingBy === "count" || rankingBy === "winrate" ? -1 : 1
       return (a[rankingBy] - b[rankingBy]) * order
     })
-  }, [meta, rankingBy])
+  }, [meta, rankingBy, selectedPkm])
 
   const dynamicRowHeight = useDynamicRowHeight({
     defaultRowHeight: ROW_HEIGHT,
@@ -39,17 +63,27 @@ export function CompositionReport() {
     <div id="meta-report-compo">
       <header>
         <h2>{t("best_team_compositions")}</h2>
-        <select value={rankingBy} onChange={(e) => setRanking(e.target.value)}>
-          <option value="count">
-            {t("rank")} {t("by_poularity")}
-          </option>
-          <option value="mean_rank">
-            {t("rank")} {t("by_average_place")}
-          </option>
-          <option value="winrate">
-            {t("rank")} {t("by_winrate")}
-          </option>
-        </select>
+        <div className="filters">
+          <select
+            value={rankingBy}
+            onChange={(e) => setRanking(e.target.value)}
+          >
+            <option value="count">
+              {t("rank")} {t("by_popularity")}
+            </option>
+            <option value="mean_rank">
+              {t("rank")} {t("by_average_place")}
+            </option>
+            <option value="winrate">
+              {t("rank")} {t("by_winrate")}
+            </option>
+          </select>
+        </div>
+        <PokemonTypeahead
+          value={selectedPkm}
+          options={popularPokemonOptions}
+          onChange={(pkm) => setSelectedPkm(pkm)}
+        />
       </header>
 
       <article>

@@ -1,7 +1,7 @@
 import { getStateCallbacks, Room, RoomAvailable } from "@colyseus/sdk"
 import firebase from "firebase/compat/app"
 import { t } from "i18next"
-import { NavigateFunction } from "react-router-dom"
+import { NavigateFunction } from "react-router"
 import {
   TournamentBracketSchema,
   TournamentPlayerSchema,
@@ -9,8 +9,7 @@ import {
 } from "../../../models/colyseus-models/tournament"
 import LobbyState from "../../../rooms/states/lobby-state"
 import PreparationState from "../../../rooms/states/preparation-state"
-import { ISuggestionUser, Transfer } from "../../../types"
-import type { Booster } from "../../../types/Booster"
+import { Transfer } from "../../../types"
 import { CloseCodes, CloseCodesMessages } from "../../../types/enum/CloseCodes"
 import { ConnectionStatus } from "../../../types/enum/ConnectionStatus"
 import type { NonFunctionPropNames } from "../../../types/HelperTypes"
@@ -23,12 +22,14 @@ import {
   authenticateUser,
   client,
   joinLobby,
+  joinPreparation,
   leaveRoom,
   removeMessage,
   rooms
 } from "../network"
 import { LocalStoreKeys, localStore } from "../pages/utils/store"
 import { AppDispatch } from "../stores"
+import { resetBoosters } from "../stores/BoostersStore"
 import {
   addRoom,
   addTournament,
@@ -41,10 +42,8 @@ import {
   removeTournament,
   removeTournamentBracket,
   resetLobby,
-  setBoosterContent,
   setCcu,
   setSearchedUser,
-  setSuggestions,
   updateTournament
 } from "../stores/LobbyStore"
 import {
@@ -118,6 +117,8 @@ export async function joinLobbyRoom(
               if (errorMessage) {
                 dispatch(setErrorAlertMessage(t(`errors.${errorMessage}`)))
               }
+              dispatch(resetLobby())
+              dispatch(resetBoosters())
               navigate("/")
             }
           })
@@ -231,7 +232,7 @@ export async function joinLobbyRoom(
             dispatch(removeTournament(tournament))
           })
 
-          room.onMessage(Transfer.BANNED, (message) => {
+          room.onMessage(Transfer.ALERT, (message) => {
             alert(message)
           })
 
@@ -267,20 +268,6 @@ export async function joinLobbyRoom(
 
           room.onMessage(Transfer.USER, (user: IUserMetadataClient) =>
             dispatch(setSearchedUser(user))
-          )
-
-          room.onMessage(
-            Transfer.BOOSTER_CONTENT,
-            (boosterContent: Booster) => {
-              dispatch(setBoosterContent(boosterContent))
-            }
-          )
-
-          room.onMessage(
-            Transfer.SUGGESTIONS,
-            (suggestions: ISuggestionUser[]) => {
-              dispatch(setSuggestions(suggestions))
-            }
           )
 
           joinLobby(room) // lobby room is now fully initialized and accessible
@@ -323,25 +310,16 @@ export async function joinExistingPreparationRoom(
           `Expected to join a preparation room but joined ${room.name} instead`
         )
       }
-      localStore.set(
-        LocalStoreKeys.RECONNECTION_PREPARATION,
-        {
-          reconnectionToken: room.reconnectionToken,
-          roomId: room.roomId
-        },
-        30
-      )
-      await Promise.allSettled([
-        leaveRoom("lobby"),
-        room.connection.isOpen && room.leave(false)
-      ])
+      joinPreparation(room, 30)
+      leaveRoom("lobby")
       dispatch(resetLobby())
+      dispatch(resetBoosters())
       navigate("/preparation")
     }
   } catch (error: any) {
     if (error?.code && error.code in CloseCodesMessages) {
       const errorMessage =
-        CloseCodesMessages[error.code as keyof typeof CloseCodesMessages]
+        CloseCodesMessages[error.code as keyof typeof CloseCodesMessages]!
       dispatch(setErrorAlertMessage(t(`errors.${errorMessage}`)))
     } else {
       logger.error(error)

@@ -2,22 +2,19 @@ import { Dispatcher } from "@colyseus/command"
 import { MapSchema } from "@colyseus/schema"
 import { Client, CloseCode, Room } from "colyseus"
 import admin from "firebase-admin"
-import { nanoid } from "nanoid"
 import {
-  AdditionalPicksStages,
   ALLOWED_GAME_RECONNECTION_TIME,
-  EventPointsPerRank,
   ExpPlace,
-  getBaseAltForm,
-  LegendaryPool,
-  MAX_EVENT_POINTS,
+  getCurrentGameEvent,
   MAX_LOADING_TIME,
   MAX_SIMULATION_DELTA_TIME,
   MinStageForGameToCount,
-  PkmAltFormsByPkm,
-  PortalCarouselStages,
-  UniquePool
+  THEME_BY_TITLE,
+  TITLES_UNLOCKING_THEMES,
+  VICTORY_ROAD_MAX_EVENT_POINTS,
+  VictoryRoadPointsPerRank
 } from "../config"
+import { GADGETS } from "../config/game/gadgets"
 import { computeElo } from "../core/elo"
 import { CountEvolutionRule, ItemEvolutionRule } from "../core/evolution-rules"
 import { MiniGame } from "../core/mini-game"
@@ -31,10 +28,13 @@ import {
 import { IGameUser } from "../models/colyseus-models/game-user"
 import Player from "../models/colyseus-models/player"
 import { Pokemon } from "../models/colyseus-models/pokemon"
-import { Wanderer } from "../models/colyseus-models/wanderer"
-import { BotV2, IDetailledPokemon } from "../models/mongo-models/bot-v2"
+import { updatePlayerExpeditionsAfterGame } from "../models/expeditions"
+import { BotV2 } from "../models/mongo-models/bot-v2"
 import DetailledStatistic from "../models/mongo-models/detailled-statistic-v2"
-import UserMetadata from "../models/mongo-models/user-metadata"
+import UserMetadata, {
+  giveUserExp,
+  toLeanUserMetadata
+} from "../models/mongo-models/user-metadata"
 import PokemonFactory from "../models/pokemon-factory"
 import {
   getPokemonData,
@@ -42,6 +42,7 @@ import {
 } from "../models/precomputed/precomputed-pokemon-data"
 import { PRECOMPUTED_POKEMONS_PER_RARITY } from "../models/precomputed/precomputed-rarity"
 import { getAdditionalsTier1, getSellPrice } from "../models/shop"
+import { updatePlayerTitlesAfterGame } from "../models/titles"
 import { fetchEventLeaderboard } from "../services/leaderboard"
 import { notificationsService } from "../services/notifications"
 import {
@@ -61,21 +62,20 @@ import {
 import { CloseCodes } from "../types/enum/CloseCodes"
 import { EloRank } from "../types/enum/EloRank"
 import { GameMode, PokemonActionState, Rarity } from "../types/enum/Game"
-import { Item } from "../types/enum/Item"
+import { Item, Wands } from "../types/enum/Item"
 import { Passive } from "../types/enum/Passive"
 import {
-  NonPkm,
   Pkm,
   PkmDuos,
   PkmIndex,
-  PkmProposition,
   PkmRegionalVariants
 } from "../types/enum/Pokemon"
 import { SpecialGameRule } from "../types/enum/SpecialGameRule"
 import { Synergy } from "../types/enum/Synergy"
-import { WandererBehavior, WandererType } from "../types/enum/Wanderer"
+import { GameEvent } from "../types/events"
 import { IPokemonCollectionItemMongo } from "../types/interfaces/UserMetadata"
-import { removeInArray } from "../utils/array"
+import type { IDetailledPokemon } from "../types/models/bot-v2"
+import { isIn, removeInArray } from "../utils/array"
 import { getAvatarString } from "../utils/avatar"
 import {
   getFirstAvailablePositionInBench,
@@ -85,8 +85,8 @@ import { isValidDate } from "../utils/date"
 import { formatMinMaxRanks, getRank } from "../utils/elo"
 import { logger } from "../utils/logger"
 import { clamp } from "../utils/number"
-import { chance, shuffleArray } from "../utils/random"
-import { values } from "../utils/schemas"
+import { shuffleArray } from "../utils/random"
+import { schemaValues } from "../utils/schemas"
 import {
   OnBuyPokemonCommand,
   OnDragDropCombineCommand,
@@ -157,6 +157,10 @@ export default class GameRoom extends Room<{ state: GameState }> {
       // add the elo range in the game room name
       // see https://discord.com/channels/737230355039387749/1019939174691905556/threads/1404518859184013422
       name = `${formatMinMaxRanks(minRank, maxRank)} ${name}`
+    }
+
+    if (gameMode === GameMode.RANKED || gameMode === GameMode.TOURNAMENT) {
+      this.autoDispose = false // prevent a tournament game to be removed before registering the brackets results
     }
 
     this.setMetadata(<IGameMetadata>{
@@ -279,7 +283,8 @@ export default class GameRoom extends Room<{ state: GameState }> {
           this.state.players.set(user.uid, player)
           this.state.botManager.addBot(player)
         } else {
-          const user = await UserMetadata.findOne({ uid: id })
+          const leanUser = await UserMetadata.findOne({ uid: id }).lean()
+          const user = leanUser ? toLeanUserMetadata(leanUser) : null
           if (user) {
             // init player
             const player = new Player(
@@ -322,16 +327,6 @@ export default class GameRoom extends Room<{ state: GameState }> {
       this.startGame()
     }, MAX_LOADING_TIME) // maximum 3 minutes of loading game, game will start no matter what after that
 
-    this.onMessage(Transfer.ITEM, (client, item: Item) => {
-      if (!this.state.gameFinished && client.auth) {
-        try {
-          this.pickItemProposition(client.auth.uid, item)
-        } catch (error) {
-          logger.error(error)
-        }
-      }
-    })
-
     this.onMessage(Transfer.SHOP, (client, message) => {
       if (!this.state.gameFinished && client.auth) {
         try {
@@ -359,15 +354,22 @@ export default class GameRoom extends Room<{ state: GameState }> {
       }
     })
 
-    this.onMessage(Transfer.POKEMON_PROPOSITION, (client, pkm: Pkm) => {
-      if (!this.state.gameFinished && client.auth) {
-        try {
-          this.pickPokemonProposition(client.auth.uid, pkm)
-        } catch (error) {
-          logger.error(error)
+    this.onMessage(
+      Transfer.CHOICE,
+      (client, message: { choiceId: string; choiceIndex: number }) => {
+        if (!this.state.gameFinished && client.auth) {
+          try {
+            this.pickChoice(
+              client.auth.uid,
+              message.choiceId,
+              message.choiceIndex
+            )
+          } catch (error) {
+            logger.error(error)
+          }
         }
       }
-    })
+    )
 
     this.onMessage(Transfer.DRAG_DROP, (client, message: IDragDropMessage) => {
       if (!this.state.gameFinished) {
@@ -576,7 +578,9 @@ export default class GameRoom extends Room<{ state: GameState }> {
           // already started, presumably a user refreshed page and wants to reconnect to game
           client.send(Transfer.LOADING_COMPLETE)
         } else if (
-          values(this.state.players).every((p) => p.loadingProgress === 100)
+          schemaValues(this.state.players).every(
+            (p) => p.loadingProgress === 100
+          )
         ) {
           this.broadcast(Transfer.LOADING_COMPLETE)
           this.startGame()
@@ -661,9 +665,15 @@ export default class GameRoom extends Room<{ state: GameState }> {
     /*if (client && client.auth && client.auth.displayName) {
       logger.info(`${client.auth.displayName} has been disconnected`)
     }*/
-    // allow disconnected client to reconnect into this room until 5 minutes
-    setPendingGame(this.presence, client.auth.uid, this.roomId)
-    await this.allowReconnection(client, ALLOWED_GAME_RECONNECTION_TIME)
+    try {
+      // allow disconnected client to reconnect into this room until 5 minutes
+      setPendingGame(this.presence, client.auth.uid, this.roomId)
+      await this.allowReconnection(client, ALLOWED_GAME_RECONNECTION_TIME)
+    } catch (e) {
+      /*if (client && client.auth && client.auth.displayName) {
+        logger.info(`${client.auth.displayName} left game room`)
+      }*/
+    }
   }
 
   async onReconnect(client: Client) {
@@ -694,7 +704,7 @@ export default class GameRoom extends Room<{ state: GameState }> {
       const player = this.state.players.get(client.auth.uid)
       const hasLeftGameBeforeTheEnd =
         player && player.life > 0 && !this.state.gameFinished
-      const otherHumans = values(this.state.players).filter(
+      const otherHumans = schemaValues(this.state.players).filter(
         (p) => !p.isBot && p.id !== client.auth.uid
       )
       if (
@@ -737,7 +747,7 @@ export default class GameRoom extends Room<{ state: GameState }> {
     }
     if (
       !this.state.gameLoaded &&
-      values(this.state.players).every((p) => p.loadingProgress === 100)
+      schemaValues(this.state.players).every((p) => p.loadingProgress === 100)
     ) {
       this.broadcast(Transfer.LOADING_COMPLETE)
       this.startGame()
@@ -746,7 +756,8 @@ export default class GameRoom extends Room<{ state: GameState }> {
 
   async onDispose() {
     logger.info("Dispose Game ", this.roomId)
-    const players = values(this.state.players)
+    this.presence.unsubscribe("room-deleted", this.onRoomDeleted)
+    const players = schemaValues(this.state.players)
     players.forEach((player) => {
       clearPendingGamesOnRoomDispose(this.presence, player.id, this.roomId)
     })
@@ -846,6 +857,7 @@ export default class GameRoom extends Room<{ state: GameState }> {
       }
     })
 
+    let shouldRefetchEventLeaderboard = false
     const eligibleToELO =
       !this.state.noElo &&
       (this.state.stageLevel >= MinStageForGameToCount || hasLeftBeforeEnd) &&
@@ -861,63 +873,21 @@ export default class GameRoom extends Room<{ state: GameState }> {
       const previousRank = getRank(previousElo)
 
       if (eligibleToXP) {
-        const expThreshold = 1000
-        if (usr.exp + exp >= expThreshold) {
-          usr.level += 1
-          usr.booster += 1
-          usr.exp = usr.exp + exp - expThreshold
-
-          // Add level up notification
-          notificationsService.addNotification(
-            player.id,
-            "level_up",
-            usr.level.toString()
-          )
-        } else {
-          usr.exp = usr.exp + exp
-        }
-        usr.exp = !isNaN(usr.exp) ? usr.exp : 0
+        giveUserExp(usr, exp)
       }
 
       usr.games += 1
-
       if (rank === 1) {
         usr.wins += 1
         if (this.state.gameMode === GameMode.RANKED) {
           player.titles.add(Title.VANQUISHER)
           const minElo = Math.min(
-            ...values(this.state.players).map((p) => p.elo)
+            ...schemaValues(this.state.players).map((p) => p.elo)
           )
           if (usr.elo === minElo && humans.length >= 8) {
             player.titles.add(Title.OUTSIDER)
           }
         }
-      }
-
-      if (usr.level >= 10) {
-        player.titles.add(Title.ROOKIE)
-      }
-      if (usr.level >= 20) {
-        player.titles.add(Title.AMATEUR)
-        player.titles.add(Title.BOT_BUILDER)
-      }
-      if (usr.level >= 30) {
-        player.titles.add(Title.VETERAN)
-      }
-      if (usr.level >= 50) {
-        player.titles.add(Title.PRO)
-      }
-      if (usr.level >= 100) {
-        player.titles.add(Title.EXPERT)
-      }
-      if (usr.level >= 150) {
-        player.titles.add(Title.ELITE)
-      }
-      if (usr.level >= 200) {
-        player.titles.add(Title.MASTER)
-      }
-      if (usr.level >= 300) {
-        player.titles.add(Title.GRAND_MASTER)
       }
 
       if (usr.elo != null && eligibleToELO) {
@@ -936,15 +906,7 @@ export default class GameRoom extends Room<{ state: GameState }> {
           )
           elo = usr.elo
         }
-        if (elo >= 1100) {
-          player.titles.add(Title.GYM_TRAINER)
-        }
-        if (elo >= 1200) {
-          player.titles.add(Title.GYM_CHALLENGER)
-        }
-        if (elo >= 1400) {
-          player.titles.add(Title.GYM_LEADER)
-        }
+
         usr.elo = elo
         usr.maxElo = Math.max(usr.maxElo, elo)
 
@@ -966,7 +928,12 @@ export default class GameRoom extends Room<{ state: GameState }> {
         DetailledStatistic.create({
           time: Date.now(),
           name: dbrecord.name,
-          pokemons: dbrecord.pokemons,
+          pokemons: dbrecord.pokemons.map((pokemon) => ({
+            ...pokemon,
+            items: Array.from(pokemon.items ?? []).map((item) =>
+              item.toString()
+            )
+          })),
           rank: dbrecord.rank,
           nbplayers: humans.length + bots.length,
           avatar: dbrecord.avatar,
@@ -977,53 +944,49 @@ export default class GameRoom extends Room<{ state: GameState }> {
           regions: player.regions
         })
 
-        if (usr.eventFinishTime == null) {
-          const eventPointsGained = EventPointsPerRank[clamp(rank - 1, 0, 7)]
-          usr.eventPoints = clamp(
-            usr.eventPoints + eventPointsGained,
-            0,
-            MAX_EVENT_POINTS
-          )
-          usr.maxEventPoints = Math.max(usr.maxEventPoints, usr.eventPoints)
-          if (usr.maxEventPoints >= MAX_EVENT_POINTS) {
-            usr.eventFinishTime = new Date()
-
-            const nbFinishers = await UserMetadata.countDocuments({
-              eventFinishTime: { $ne: null }
-            })
-            if (nbFinishers === 0) {
-              player.titles.add(Title.VICTORIOUS)
-              this.presence.publish(
-                "announcement",
-                `${player.name} won the Victory Road race !`
-              )
-            }
-            player.titles.add(Title.FINISHER)
-            notificationsService.addNotification(
-              player.id,
-              "victory_road_finished",
-              `${nbFinishers + 1}`
+        if (
+          usr.eventFinishTime == null &&
+          getCurrentGameEvent() === GameEvent.VICTORY_ROAD
+        ) {
+          try {
+            const eventPointsGained =
+              VictoryRoadPointsPerRank[clamp(rank - 1, 0, 7)]
+            usr.eventPoints = clamp(
+              usr.eventPoints + eventPointsGained,
+              0,
+              VICTORY_ROAD_MAX_EVENT_POINTS
             )
-            fetchEventLeaderboard() // a new finisher is enough to justify fetching the leaderboard again immediately
-          }
+            usr.maxEventPoints = Math.max(usr.maxEventPoints, usr.eventPoints)
+            if (usr.maxEventPoints >= VICTORY_ROAD_MAX_EVENT_POINTS) {
+              usr.eventFinishTime = new Date()
+              usr.markModified("eventFinishTime")
 
-          if (usr.maxEventPoints >= 100) {
-            player.titles.add(Title.RUNNER)
+              const nbFinishers = await UserMetadata.countDocuments({
+                eventFinishTime: { $exists: true, $ne: null }
+              })
+              if (nbFinishers === 0) {
+                player.titles.add(Title.VICTORIOUS)
+                this.presence.publish(
+                  "announcement",
+                  `${player.name} won the Victory Road race !`
+                )
+              }
+              player.titles.add(Title.FINISHER)
+              notificationsService.addNotification(
+                player.id,
+                "victory_road_finished",
+                `${nbFinishers + 1}`
+              )
+              shouldRefetchEventLeaderboard = true
+            }
+
+            if (usr.maxEventPoints >= 100) {
+              player.titles.add(Title.RUNNER)
+            }
+          } catch (error) {
+            logger.error("Error updating event points", error)
           }
         }
-      }
-
-      if (player.life >= 100 && rank === 1) {
-        player.titles.add(Title.TYRANT)
-      }
-      if (player.life === 1 && rank === 1) {
-        player.titles.add(Title.SURVIVOR)
-      }
-
-      if (player.rerollCount > 60) {
-        player.titles.add(Title.GAMBLER)
-      } else if (player.rerollCount < 20 && rank === 1) {
-        player.titles.add(Title.NATURAL)
       }
 
       // update all pokemons played count
@@ -1047,31 +1010,24 @@ export default class GameRoom extends Room<{ state: GameState }> {
       })
 
       if (
-        player.titles.has(Title.COLLECTOR) === false &&
-        Object.values(Pkm)
-          .filter((p) => NonPkm.includes(p) === false)
-          .every((pkm) => {
-            const baseForm = getBaseAltForm(pkm)
-            const accepted: Pkm[] =
-              baseForm in PkmAltFormsByPkm
-                ? [baseForm, ...PkmAltFormsByPkm[baseForm]]
-                : [baseForm]
-            return accepted.some((form) => {
-              const pokemonCollectionItem = usr.pokemonCollection.get(
-                PkmIndex[form]
-              )
-              return pokemonCollectionItem && pokemonCollectionItem.played > 0
-            })
-          })
+        getCurrentGameEvent() === GameEvent.EXPEDITIONS &&
+        eligibleToXP &&
+        this.state.gameMode !== GameMode.CUSTOM_LOBBY
       ) {
-        player.titles.add(Title.COLLECTOR)
+        const hasCompletedExpeditions = updatePlayerExpeditionsAfterGame(
+          player,
+          usr
+        )
+        if (hasCompletedExpeditions) shouldRefetchEventLeaderboard = true
       }
+
+      updatePlayerTitlesAfterGame(player, usr, rank)
 
       if (usr.titles === undefined) {
         usr.titles = []
       }
 
-      const newTitlesEarned: string[] = []
+      const newTitlesEarned: Title[] = []
       player.titles.forEach((t) => {
         if (!usr.titles.includes(t)) {
           //logger.info("title added ", t)
@@ -1084,12 +1040,26 @@ export default class GameRoom extends Room<{ state: GameState }> {
       if (newTitlesEarned.length > 0) {
         newTitlesEarned.forEach((title) => {
           notificationsService.addNotification(player.id, "new_title", title)
+          if (
+            isIn(TITLES_UNLOCKING_THEMES, title) &&
+            usr.level >= GADGETS.palette.levelRequired
+          ) {
+            notificationsService.addNotification(
+              player.id,
+              "new_theme",
+              THEME_BY_TITLE[title]!
+            )
+          }
         })
       }
 
       //logger.debug(usr);
       //usr.markModified('metadata');
-      usr.save()
+      await usr.save()
+      if (shouldRefetchEventLeaderboard) {
+        await fetchEventLeaderboard()
+        //client.send(Transfer.USER_PROFILE, toUserMetadataJSON(usr))
+      }
     }
   }
 
@@ -1224,133 +1194,118 @@ export default class GameRoom extends Room<{ state: GameState }> {
     return size
   }
 
-  pickPokemonProposition(
+  pickChoice(
     playerId: string,
-    pkm: PkmProposition,
+    choiceId: string,
+    choiceIndex: number,
     bypassLackOfSpace = false
   ) {
     const player = this.state.players.get(playerId)
-    if (!player || player.pokemonsProposition.length === 0) return
+    if (!player) return
+    const choice = player.choices.find((c) => c.id === choiceId)
     if (
-      this.state.additionalPokemons.includes(pkm as Pkm) &&
-      this.state.specialGameRule !== SpecialGameRule.EVERYONE_IS_HERE
+      !choice ||
+      choiceIndex < 0 ||
+      choiceIndex >= (choice.pokemons?.length || choice.items?.length)
     )
-      return // already picked, probably a double click
-    if (
-      UniquePool.includes(pkm) &&
-      this.state.stageLevel !== PortalCarouselStages[1] &&
-      !(
-        this.state.specialGameRule === SpecialGameRule.UNIQUE_STARTER &&
-        this.state.stageLevel <= 1
+      return
+
+    if (choice.pokemons.length > 0) {
+      const pkm = choice.pokemons[choiceIndex]
+      let pokemonsObtained: Pokemon[] = (
+        pkm in PkmDuos ? PkmDuos[pkm] : [pkm]
+      ).map((p) => PokemonFactory.createPokemonFromName(p, player))
+
+      const pokemon = pokemonsObtained[0]
+      const isEvolution =
+        pokemon.evolutionRule &&
+        pokemon.evolutionRule instanceof CountEvolutionRule &&
+        pokemon.evolutionRule.canEvolveIfGettingOne(pokemon, player)
+
+      const freeSpace = getFreeSpaceOnBench(player.board)
+
+      if (
+        freeSpace < pokemonsObtained.length &&
+        !bypassLackOfSpace &&
+        !isEvolution
       )
-    )
-      return // should not be pickable at this stage
-    if (
-      LegendaryPool.includes(pkm) &&
-      this.state.stageLevel !== PortalCarouselStages[2]
-    )
-      return // should not be pickable at this stage
+        return false // prevent picking if not enough space on bench
 
-    let pokemonsObtained: Pokemon[] = (
-      pkm in PkmDuos ? PkmDuos[pkm] : [pkm]
-    ).map((p) => PokemonFactory.createPokemonFromName(p, player))
+      if (choice.type === "addPick") {
+        if (pokemonsObtained[0]?.regional) {
+          // If player picked their regional variant, we need to add the base pokemon to the shop pool
+          const basePkm = (Object.keys(PkmRegionalVariants).find((p) =>
+            PkmRegionalVariants[p].includes(pokemonsObtained[0].name)
+          ) ?? pokemonsObtained[0].name) as Pkm
+          this.state.shop.addAdditionalPokemon(basePkm, this.state)
+          player.regionalPokemons.push(pkm as Pkm)
+        } else {
+          this.state.shop.addAdditionalPokemon(pkm, this.state)
+        }
 
-    const pokemon = pokemonsObtained[0]
-    const isEvolution =
-      pokemon.evolutionRule &&
-      pokemon.evolutionRule instanceof CountEvolutionRule &&
-      pokemon.evolutionRule.canEvolveIfGettingOne(pokemon, player)
+        if (this.state.specialGameRule === SpecialGameRule.CHOSEN_ONES) {
+          pokemonsObtained = pokemonsObtained.map((pkm) => {
+            const evolution = pkm.hasEvolution
+              ? pkm.evolutionRule.getEvolution(
+                  pkm,
+                  player,
+                  this.state.stageLevel
+                )
+              : pkm.name
+            const rank = [Rarity.UNCOMMON, Rarity.RARE, Rarity.EPIC].indexOf(
+              pkm.rarity
+            )
+            const replacement = PokemonFactory.createPokemonFromName(
+              evolution,
+              player
+            )
+            replacement.addMaxHP([50, 100, 150][rank] ?? 50)
+            replacement.addAttack([5, 10, 15][rank] ?? 5)
+            replacement.addAbilityPower([15, 30, 45][rank] ?? 15)
+            return replacement
+          })
+        }
 
-    const freeSpace = getFreeSpaceOnBench(player.board)
-
-    if (
-      freeSpace < pokemonsObtained.length &&
-      !bypassLackOfSpace &&
-      !isEvolution
-    )
-      return // prevent picking if not enough space on bench
-
-    // at this point, the player is allowed to pick a proposition
-    const selectedIndex = player.pokemonsProposition.indexOf(pkm)
-    player.pokemonsProposition.clear()
-
-    if (AdditionalPicksStages.includes(this.state.stageLevel)) {
-      // If player picked their regional variant, we need to add the base pokemon to the shop pool
-      if (pokemonsObtained[0]?.regional) {
-        const basePkm = (Object.keys(PkmRegionalVariants).find((p) =>
-          PkmRegionalVariants[p].includes(pokemonsObtained[0].name)
-        ) ?? pokemonsObtained[0].name) as Pkm
-        this.state.shop.addAdditionalPokemon(basePkm, this.state)
-        player.regionalPokemons.push(pkm as Pkm)
-      } else {
-        this.state.shop.addAdditionalPokemon(pkm, this.state)
+        // update regional pokemons in case some regional variants of add picks are now available
+        this.state.players.forEach((p) =>
+          p.updateRegionalPool(this.state, false)
+        )
       }
 
-      if (this.state.specialGameRule === SpecialGameRule.CHOSEN_ONES) {
-        pokemonsObtained = pokemonsObtained.map((pkm) => {
-          const evolution = pkm.hasEvolution
-            ? pkm.evolutionRule.getEvolution(pkm, player, this.state.stageLevel)
-            : pkm.name
-          const rank = [Rarity.UNCOMMON, Rarity.RARE, Rarity.EPIC].indexOf(
-            pkm.rarity
-          )
-          const replacement = PokemonFactory.createPokemonFromName(
-            evolution,
-            player
-          )
-          replacement.addMaxHP([50, 100, 150][rank] ?? 50, player)
-          replacement.addAttack([5, 10, 15][rank] ?? 5)
-          replacement.addAbilityPower([15, 30, 45][rank] ?? 15)
-          return replacement
-        })
+      if (choice.type === "starter") {
+        player.firstPartner = pokemonsObtained[0].name
       }
 
-      // update regional pokemons in case some regional variants of add picks are now available
-      this.state.players.forEach((p) => p.updateRegionalPool(this.state, false))
+      pokemonsObtained.forEach((pokemon) => {
+        const freeCellX = getFirstAvailablePositionInBench(player.board)
+        if (isEvolution) {
+          pokemon.positionX = freeCellX ?? -1 // temporary position off the board just to handle evolution
+          pokemon.positionY = 0
+          player.board.set(pokemon.id, pokemon)
+          pokemon.onAcquired(player)
+          this.checkEvolutionsAfterPokemonAcquired(playerId)
+        } else if (freeCellX !== null) {
+          pokemon.positionX = freeCellX
+          pokemon.positionY = 0
+          player.board.set(pokemon.id, pokemon)
+          pokemon.onAcquired(player)
+        } else {
+          // sell picked pokemon if no more space on bench and bypassLackOfSpace is true
+          const sellPrice = getSellPrice(pokemon, this.state.specialGameRule)
+          player.addMoney(sellPrice, true, null)
+        }
+      })
     }
 
-    if (
-      AdditionalPicksStages.includes(this.state.stageLevel) ||
-      this.state.stageLevel <= 1
-    ) {
-      const selectedItem = player.itemsProposition[selectedIndex]
-      if (player.itemsProposition.length > 0 && selectedItem != null) {
-        player.items.push(selectedItem)
-        player.itemsProposition.clear()
-      }
-    }
-
-    if (this.state.stageLevel <= 1) {
-      player.firstPartner = pokemonsObtained[0].name
-    }
-
-    pokemonsObtained.forEach((pokemon) => {
-      const freeCellX = getFirstAvailablePositionInBench(player.board)
-      if (isEvolution) {
-        pokemon.positionX = freeCellX ?? -1 // temporary position off the board just to handle evolution
-        pokemon.positionY = 0
-        player.board.set(pokemon.id, pokemon)
-        pokemon.onAcquired(player)
-        this.checkEvolutionsAfterPokemonAcquired(playerId)
-      } else if (freeCellX !== null) {
-        pokemon.positionX = freeCellX
-        pokemon.positionY = 0
-        player.board.set(pokemon.id, pokemon)
-        pokemon.onAcquired(player)
-      } else {
-        // sell picked pokemon if no more space on bench and bypassLackOfSpace is true
-        const sellPrice = getSellPrice(pokemon, this.state.specialGameRule)
-        player.addMoney(sellPrice, true, null)
-      }
-    })
-  }
-
-  pickItemProposition(playerId: string, item: Item) {
-    const player = this.state.players.get(playerId)
-    if (player && player.itemsProposition.includes(item)) {
+    if (choice.items.length > 0) {
+      const item = choice.items[choiceIndex]
       player.items.push(item)
-      player.itemsProposition.clear()
+      if (isIn(Wands, item)) {
+        player.fairyWands.push(item)
+      }
     }
+
+    removeInArray(player.choices, choice)
   }
 
   computeRoundDamage(
@@ -1407,29 +1362,5 @@ export default class GameRoom extends Room<{ state: GameState }> {
     if (this.roomId === roomId) {
       this.disconnect(CloseCodes.ROOM_DELETED)
     }
-  }
-
-  spawnWanderingPokemon({
-    pkm,
-    type,
-    behavior,
-    player
-  }: {
-    pkm: Pkm
-    type: WandererType
-    behavior: WandererBehavior
-    player: Player
-  }) {
-    const client = this.clients.find((cli) => cli.auth.uid === player.id)
-    if (!client) return
-    const id = nanoid()
-    const wanderer = new Wanderer({
-      id,
-      pkm,
-      type,
-      behavior,
-      shiny: chance(0.01)
-    })
-    player.wanderers.set(id, wanderer)
   }
 }

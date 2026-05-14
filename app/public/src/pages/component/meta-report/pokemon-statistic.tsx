@@ -2,22 +2,20 @@ import React from "react"
 import { useTranslation } from "react-i18next"
 import { AutoSizer } from "react-virtualized-auto-sizer"
 import { List, useDynamicRowHeight } from "react-window"
-import {
-  IHistoryEntry,
-  IPokemonStatV2
-} from "../../../../../models/mongo-models/pokemons-statistic-v2"
 import { getPokemonData } from "../../../../../models/precomputed/precomputed-pokemon-data"
 import { PRECOMPUTED_POKEMONS_PER_RARITY } from "../../../../../models/precomputed/precomputed-rarity"
 import { PRECOMPUTED_POKEMONS_PER_TYPE } from "../../../../../models/precomputed/precomputed-types"
 import { Rarity } from "../../../../../types/enum/Game"
 import { Pkm, PkmFamily, PkmIndex } from "../../../../../types/enum/Pokemon"
 import { Synergy } from "../../../../../types/enum/Synergy"
-import PokemonPortrait from "../pokemon-portrait"
-import { HistoryDelta } from "./history-delta"
+import { getPortraitSrc } from "../../../../../utils/avatar"
 import {
-  type HistorySeries,
-  MultiLineHistoryChart
-} from "./multi-line-history-chart"
+  IHistoryEntry,
+  IPokemonStatV2
+} from "../../../models/pokemons-statistic-v2"
+import PokemonPortrait from "../pokemon-portrait"
+import { HistoryChart } from "./history-chart"
+import { HistoryDelta } from "./history-delta"
 import "./pokemon-statistic.css"
 
 export default function PokemonStatistic(props: {
@@ -97,8 +95,7 @@ export default function PokemonStatistic(props: {
             rowHeight={dynamicRowHeight}
             rowComponent={PokemonFamilyRow}
             rowProps={{
-              familiesArray,
-              t
+              familiesArray
             }}
           />
         )
@@ -109,14 +106,12 @@ export default function PokemonStatistic(props: {
 
 type PkmnStatRowData = {
   familiesArray: [Pkm, any][]
-  t: (key: string) => string
 }
 
 function PokemonFamilyRow({
   index,
   style,
-  familiesArray,
-  t
+  familiesArray
 }: {
   ariaAttributes: object
   index: number
@@ -127,7 +122,7 @@ function PokemonFamilyRow({
   return (
     <div style={style}>
       <div>
-        <PokemonFamilyCard pkm={pkm} family={family} rank={index + 1} t={t} />
+        <PokemonFamilyCard pkm={pkm} family={family} rank={index + 1} />
       </div>
     </div>
   )
@@ -142,136 +137,145 @@ function PokemonFamilyCard(props: {
     averageItemHeld?: number | null
   }
   rank: number
-  t: (key: string) => string
 }) {
-  const { pkm, family, rank, t } = props
+  const { family, rank } = props
   const [expanded, setExpanded] = React.useState(false)
-
-  // Build per-pokemon history series
-  const rankSeries: HistorySeries[] = React.useMemo(
-    () =>
-      family.pokemons.map((p) => ({
-        name: p.name,
-        entries: p.rank_history ?? []
-      })),
-    [family.pokemons]
-  )
-  const countSeries: HistorySeries[] = React.useMemo(
-    () =>
-      family.pokemons.map((p) => ({
-        name: p.name,
-        entries: p.count_history ?? []
-      })),
-    [family.pokemons]
-  )
+  const { t } = useTranslation()
 
   // Aggregated history for delta badges
   const familyRankHistory = aggregateHistory(
-    rankSeries.map((s) => s.entries),
+    family.pokemons.map((p) => p.rank_history ?? []),
     "average"
   )
   const familyCountHistory = aggregateHistory(
-    countSeries.map((s) => s.entries),
+    family.pokemons.map((p) => p.count_history ?? []),
     "sum"
   )
 
   return (
     <div className="my-box pokemon-family-stat">
-      <div className="pokemon-rank-col">
-        <span className="rank">{rank}</span>
-        <button
-          className="history-expand-btn"
-          onClick={() => setExpanded((v) => !v)}
-          title={t("history")}
-        >
-          {expanded ? "▾" : "▸"}
-        </button>
-      </div>
+      <div className="pokemon-family-stat-top">
+        <div className="pokemon-rank-col">
+          <span className="rank">{rank}</span>
+          <button
+            className="history-expand-btn"
+            onClick={() => setExpanded((v) => !v)}
+            title={t("history")}
+          >
+            {expanded ? "▾" : "▸"}
+          </button>
+        </div>
 
-      <div className="pokemon-family-content">
-        <div className="pokemon-family-top">
-          <div className="pokemon-family-summary">
-            <div className="pokemon-portraits-vertical">
+        <div className="pokemon-family-content">
+          <div className="pokemon-family-top">
+            <div className="pokemon-family-summary">
+              <div className="pokemon-portraits-vertical">
+                {family.pokemons.map((pokemon) => (
+                  <div
+                    className="pokemon-detail-row"
+                    key={pokemon.name + "-portrait"}
+                  >
+                    <PokemonPortrait
+                      portrait={PkmIndex[pokemon.name]}
+                      width={40}
+                    />
+                    <span className="pokemon-name-container">
+                      <span>{t(`pkm.${pokemon.name}`)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="pokemon-family-stats">
+                <span className="pokemon-stat-item">
+                  <div>{t("average_place")}</div>
+                  <span className="pokemon-stat-value">
+                    {family.averageRank ? family.averageRank.toFixed(1) : "???"}
+                  </span>
+                  <HistoryDelta entries={familyRankHistory} invertY={true} />
+                </span>
+                <span className="pokemon-stat-item">
+                  <div>{t("count")}</div>
+                  <span className="pokemon-stat-value">
+                    {family.totalCount}
+                  </span>
+                  <HistoryDelta entries={familyCountHistory} />
+                </span>
+                <span className="pokemon-stat-item">
+                  <div>{t("held_items")}</div>
+                  <span className="pokemon-stat-value">
+                    {family.averageItemHeld?.toFixed(2)}
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <div className="pokemon-details-list">
               {family.pokemons.map((pokemon) => (
                 <div
+                  key={pokemon.name + "-details"}
                   className="pokemon-detail-row"
-                  key={pokemon.name + "-portrait"}
                 >
                   <PokemonPortrait
                     portrait={PkmIndex[pokemon.name]}
                     width={40}
                   />
-                  <span className="pokemon-name-container">
-                    <span>{t(`pkm.${pokemon.name}`)}</span>
+                  <span className="pokemon-detail-stat" title="Average Rank">
+                    <strong>
+                      {pokemon.count === 0 ? "???" : pokemon.rank.toFixed(1)}
+                    </strong>
                   </span>
+                  <span className="pokemon-stat-container">
+                    <label>{t("count")}:</label> {pokemon.count}
+                  </span>
+                  <span className="pokemon-stat-container">
+                    <label>{t("held_items")}:</label> {pokemon.item_count}
+                  </span>
+                  <div className="pokemon-items-row">
+                    {pokemon.items.map((item) => (
+                      <img
+                        key={pokemon.name + "-item-" + item}
+                        src={"assets/item/" + item + ".png"}
+                        className="pokemon-item-img"
+                      />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
-            <div className="pokemon-family-stats">
-              <span className="pokemon-stat-item">
-                <div>{t("average_place")}</div>
-                <span className="pokemon-stat-value">
-                  {family.averageRank ? family.averageRank.toFixed(1) : "???"}
-                </span>
-                <HistoryDelta entries={familyRankHistory} invertY={true} />
-              </span>
-              <span className="pokemon-stat-item">
-                <div>{t("count")}</div>
-                <span className="pokemon-stat-value">{family.totalCount}</span>
-                <HistoryDelta entries={familyCountHistory} />
-              </span>
-              <span className="pokemon-stat-item">
-                <div>{t("held_items")}</div>
-                <span className="pokemon-stat-value">
-                  {family.averageItemHeld?.toFixed(2)}
-                </span>
-              </span>
-            </div>
-          </div>
-
-          <div className="pokemon-details-list">
-            {family.pokemons.map((pokemon) => (
-              <div
-                key={pokemon.name + "-details"}
-                className="pokemon-detail-row"
-              >
-                <PokemonPortrait portrait={PkmIndex[pokemon.name]} width={40} />
-                <span className="pokemon-detail-stat" title="Average Rank">
-                  <strong>
-                    {pokemon.count === 0 ? "???" : pokemon.rank.toFixed(1)}
-                  </strong>
-                </span>
-                <span className="pokemon-stat-container">
-                  <label>{t("count")}:</label> {pokemon.count}
-                </span>
-                <span className="pokemon-stat-container">
-                  <label>{t("held_items")}:</label> {pokemon.item_count}
-                </span>
-                <div className="pokemon-items-row">
-                  {pokemon.items.map((item) => (
-                    <img
-                      key={pokemon.name + "-item-" + item}
-                      src={"assets/item/" + item + ".png"}
-                      className="pokemon-item-img"
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
           </div>
         </div>
-
-        {expanded && (
-          <div className="pokemon-history-charts">
-            <MultiLineHistoryChart
-              series={rankSeries}
-              label="average_place"
-              invertY={true}
-            />
-            <MultiLineHistoryChart series={countSeries} label="count" />
-          </div>
-        )}
       </div>
+
+      {expanded && (
+        <div className="pokemon-history-charts">
+          {family.pokemons.map((pokemon) => (
+            <div
+              key={pokemon.name + "-history"}
+              className="pokemon-member-charts"
+            >
+              <div className="pokemon-member-charts-header">
+                <PokemonPortrait portrait={PkmIndex[pokemon.name]} width={24} />
+                <span>{t(`pkm.${pokemon.name}`)}</span>
+              </div>
+              <div className="pokemon-member-charts-row">
+                <HistoryChart
+                  entries={pokemon.rank_history ?? []}
+                  label="average_place"
+                  color="#e8a838"
+                  invertY={true}
+                  portraitSrc={getPortraitSrc(PkmIndex[pokemon.name])}
+                />
+                <HistoryChart
+                  entries={pokemon.count_history ?? []}
+                  label="count"
+                  color="#76c893"
+                  portraitSrc={getPortraitSrc(PkmIndex[pokemon.name])}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

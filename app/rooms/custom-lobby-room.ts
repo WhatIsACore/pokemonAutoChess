@@ -13,11 +13,12 @@ import Message from "../models/colyseus-models/message"
 import { TournamentSchema } from "../models/colyseus-models/tournament"
 import ChatV2 from "../models/mongo-models/chat-v2"
 import Tournament from "../models/mongo-models/tournament"
-import UserMetadata from "../models/mongo-models/user-metadata"
+import UserMetadata, {
+  toLeanUserMetadata
+} from "../models/mongo-models/user-metadata"
 import { notificationsService } from "../services/notifications"
 import { Emotion, Role, Title, Transfer } from "../types"
 import { CloseCodes } from "../types/enum/CloseCodes"
-import { EloRank } from "../types/enum/EloRank"
 import { GameMode } from "../types/enum/Game"
 import { Language } from "../types/enum/Language"
 import { ITournament } from "../types/interfaces/Tournament"
@@ -25,36 +26,33 @@ import { IUserMetadataMongo } from "../types/interfaces/UserMetadata"
 import { logger } from "../utils/logger"
 import {
   BanUserCommand,
-  BuyBoosterCommand,
-  BuyEmotionCommand,
   ChangeAvatarCommand,
   ChangeNameCommand,
-  ChangeSelectedEmotionCommand,
   ChangeTitleCommand,
-  CreateTournamentLobbiesCommand,
   DeleteAccountCommand,
   DeleteRoomCommand,
-  DeleteTournamentCommand,
-  EndTournamentMatchCommand,
   GiveBoostersCommand,
   GiveRoleCommand,
   GiveTitleCommand,
   HeapSnapshotCommand,
   JoinOrOpenRoomCommand,
-  NextTournamentStageCommand,
-  OnCreateTournamentCommand,
   OnJoinCommand,
   OnLeaveCommand,
   OnNewMessageCommand,
   OnSearchByIdCommand,
-  OnSearchCommand,
-  OpenBoosterCommand,
-  ParticipateInTournamentCommand,
-  RemakeTournamentLobbyCommand,
   RemoveMessageCommand,
   SelectLanguageCommand,
   UnbanUserCommand
 } from "./commands/lobby-commands"
+import {
+  CreateTournamentLobbiesCommand,
+  DeleteTournamentCommand,
+  EndTournamentMatchCommand,
+  NextTournamentStageCommand,
+  OnCreateTournamentCommand,
+  ParticipateInTournamentCommand,
+  RemakeTournamentLobbyCommand
+} from "./commands/tournament-commands"
 import LobbyState from "./states/lobby-state"
 
 export default class CustomLobbyRoom extends Room {
@@ -167,8 +165,12 @@ export default class CustomLobbyRoom extends Room {
 
     this.onMessage(
       Transfer.UNBAN,
-      (client, { uid, name }: { uid: string; name: string }) => {
-        this.dispatcher.dispatch(new UnbanUserCommand(), { client, uid, name })
+      (client, { uid, reason }: { uid: string; reason: string }) => {
+        this.dispatcher.dispatch(new UnbanUserCommand(), {
+          client,
+          uid,
+          reason
+        })
       }
     )
 
@@ -275,10 +277,6 @@ export default class CustomLobbyRoom extends Room {
       }
     )
 
-    this.onMessage(Transfer.HEAP_SNAPSHOT, (client) => {
-      this.dispatcher.dispatch(new HeapSnapshotCommand())
-    })
-
     this.onMessage(
       Transfer.GIVE_TITLE,
       (client, { uid, title }: { uid: string; title: Title }) => {
@@ -290,16 +288,16 @@ export default class CustomLobbyRoom extends Room {
       this.dispatcher.dispatch(new DeleteAccountCommand(), { client })
     })
 
+    this.onMessage(Transfer.HEAP_SNAPSHOT, (client) => {
+      this.dispatcher.dispatch(new HeapSnapshotCommand(), { client })
+    })
+
     this.onMessage(
       Transfer.SET_ROLE,
       (client, { uid, role }: { uid: string; role: Role }) => {
         this.dispatcher.dispatch(new GiveRoleCommand(), { client, uid, role })
       }
     )
-
-    this.onMessage(Transfer.OPEN_BOOSTER, (client) => {
-      this.dispatcher.dispatch(new OpenBoosterCommand(), { client })
-    })
 
     this.onMessage(Transfer.CHANGE_NAME, (client, message) => {
       this.dispatcher.dispatch(new ChangeNameCommand(), {
@@ -312,60 +310,8 @@ export default class CustomLobbyRoom extends Room {
       this.dispatcher.dispatch(new ChangeTitleCommand(), { client, title })
     })
 
-    this.onMessage(
-      Transfer.CHANGE_SELECTED_EMOTION,
-      (
-        client,
-        {
-          index,
-          emotion,
-          shiny
-        }: { index: string; emotion: Emotion | null; shiny: boolean }
-      ) => {
-        this.dispatcher.dispatch(new ChangeSelectedEmotionCommand(), {
-          client,
-          index,
-          emotion,
-          shiny
-        })
-      }
-    )
-
-    this.onMessage(
-      Transfer.BUY_EMOTION,
-      (
-        client,
-        {
-          index,
-          emotion,
-          shiny
-        }: { index: string; emotion: Emotion; shiny: boolean }
-      ) => {
-        this.dispatcher.dispatch(new BuyEmotionCommand(), {
-          client,
-          index,
-          emotion,
-          shiny
-        })
-      }
-    )
-
-    this.onMessage(
-      Transfer.BUY_BOOSTER,
-      (client, message: { index: string }) => {
-        this.dispatcher.dispatch(new BuyBoosterCommand(), {
-          client,
-          index: message.index
-        })
-      }
-    )
-
     this.onMessage(Transfer.SEARCH_BY_ID, (client, uid: string) => {
       this.dispatcher.dispatch(new OnSearchByIdCommand(), { client, uid })
-    })
-
-    this.onMessage(Transfer.SEARCH, (client, { name }: { name: string }) => {
-      this.dispatcher.dispatch(new OnSearchCommand(), { client, name })
     })
 
     // Handle notification acknowledgment from client
@@ -427,12 +373,20 @@ export default class CustomLobbyRoom extends Room {
       this.state.addAnnouncement(message)
     })
 
+    this.presence.subscribe("notification-added", (notif) =>
+      notificationsService.onNotificationAdded(notif)
+    )
+
     this.initCronJobs()
     //this.fetchChat()
     this.fetchTournaments()
   }
 
-  async onAuth(client: Client, options, context) {
+  async onAuth(
+    client: Client,
+    options,
+    context
+  ): Promise<admin.auth.UserRecord> {
     try {
       super.onAuth(client, options, context)
       const token = await admin.auth().verifyIdToken(options.idToken)
@@ -453,7 +407,8 @@ export default class CustomLobbyRoom extends Room {
   }
 
   async onJoin(client: Client) {
-    const user = await UserMetadata.findOne({ uid: client.auth.uid })
+    const leanUser = await UserMetadata.findOne({ uid: client.auth.uid }).lean()
+    const user = leanUser ? toLeanUserMetadata(leanUser) : null
     try {
       if (user?.banned) {
         throw new Error("Account banned")
@@ -477,8 +432,14 @@ export default class CustomLobbyRoom extends Room {
   }
 
   async onDrop(client: Client, code: number) {
-    // allow reconnection for 30 seconds
-    await this.allowReconnection(client, 30)
+    try {
+      // allow reconnection for 30 seconds
+      await this.allowReconnection(client, 30)
+    } catch (e) {
+      /*if (client && client.auth && client.auth.displayName) {
+        logger.info(`${client.auth.displayName} left lobby room`)
+      }*/
+    }
   }
 
   async onReconnect(client: Client) {

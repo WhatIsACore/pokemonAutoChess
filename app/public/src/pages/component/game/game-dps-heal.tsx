@@ -1,4 +1,3 @@
-import React from "react"
 import { useTranslation } from "react-i18next"
 import { IDps } from "../../../../../types"
 import { usePreference } from "../../../preferences"
@@ -25,7 +24,7 @@ export default function GameDpsHeal(props: {
             max={props.maxHeal}
             now={props.dpsMeter.heal}
             key="heal"
-            title={`${t("hp_healed")}: ${props.dpsMeter.heal}`}
+            title={`${t("game_stats.hp_healed")}: ${props.dpsMeter.heal}`}
           />
           <ProgressBar
             className={
@@ -35,7 +34,7 @@ export default function GameDpsHeal(props: {
             max={props.maxHeal}
             now={props.dpsMeter.shield}
             key="shield"
-            title={`${t("shield_given")}: ${props.dpsMeter.shield}`}
+            title={`${t("game_stats.shield_given")}: ${props.dpsMeter.shield}`}
           />
         </ProgressBar>
       </div>

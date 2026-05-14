@@ -1,7 +1,7 @@
 import { EmbedBuilder, WebhookClient } from "discord.js"
 import { BASE_URL } from "../config"
-import { IBot } from "../models/mongo-models/bot-v2"
 import { IUserMetadataMongo } from "../types/interfaces/UserMetadata"
+import type { IBot } from "../types/models/bot-v2"
 import { getAvatarSrc } from "../utils/avatar"
 import { logger } from "../utils/logger"
 
@@ -32,14 +32,14 @@ export const discordService = {
     reason: string
   ) {
     const dsEmbed = new EmbedBuilder()
-      .setTitle(`${user.displayName} banned the user ${bannedUser.displayName}`)
+      .setTitle(
+        `${user.displayName} banned the user ${bannedUser.displayName} (User ID: ${bannedUser.uid})`
+      )
       .setAuthor({
         name: user.displayName,
         iconURL: toAbsoluteURL(getAvatarSrc(user.avatar))
       })
-      .setDescription(
-        `${user.displayName} banned the user ${bannedUser.displayName}. Reason: ${reason}`
-      )
+      .setDescription(`Reason: ${reason}`)
       .setThumbnail(toAbsoluteURL(getAvatarSrc(bannedUser.avatar)))
     try {
       discordBanWebhook?.send({
@@ -50,14 +50,20 @@ export const discordService = {
     }
   },
 
-  announceUnban(user: IUserMetadataMongo, name: string) {
+  announceUnban(
+    user: IUserMetadataMongo,
+    unbannedUser: IUserMetadataMongo,
+    reason: string
+  ) {
     const dsEmbed = new EmbedBuilder()
-      .setTitle(`${user.displayName} unbanned the user ${name}`)
+      .setTitle(
+        `${user.displayName} unbanned the user ${unbannedUser.displayName} (User ID: ${unbannedUser.uid})`
+      )
       .setAuthor({
         name: user.displayName,
         iconURL: toAbsoluteURL(getAvatarSrc(user.avatar))
       })
-      .setDescription(`${user.displayName} unbanned the user ${name}`)
+      .setDescription(`Reason: ${reason}`)
       .setThumbnail(toAbsoluteURL(getAvatarSrc(user.avatar)))
     try {
       discordBanWebhook?.send({

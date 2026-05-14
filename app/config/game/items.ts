@@ -26,7 +26,7 @@ export const ItemStats: { [item in Item]?: { [stat in Stat]?: number } } = {
   [Item.POKEMONOMICON]: { [Stat.AP]: 30, [Stat.ATK]: 3 },
   [Item.POWER_LENS]: { [Stat.SPE_DEF]: 10, [Stat.AP]: 10 },
   [Item.SHELL_BELL]: { [Stat.ATK]: 5, [Stat.SPE_DEF]: 5 },
-  [Item.HEAVY_DUTY_BOOTS]: { [Stat.AP]: 40, [Stat.DEF]: 12 },
+  [Item.HEAVY_DUTY_BOOTS]: { [Stat.AP]: 50, [Stat.DEF]: 12 },
   [Item.AQUA_EGG]: { [Stat.PP]: 30 },
   [Item.BLUE_ORB]: { [Stat.PP]: 15, [Stat.SPEED]: 10 },
   [Item.SCOPE_LENS]: { [Stat.PP]: 15, [Stat.CRIT_CHANCE]: 25 },
@@ -71,7 +71,7 @@ export const ItemStats: { [item in Item]?: { [stat in Stat]?: number } } = {
   [Item.EXPLORER_KIT]: { [Stat.DEF]: 5, [Stat.SPE_DEF]: 5, [Stat.ATK]: 3 },
   [Item.PROTECTOR]: { [Stat.SHIELD]: 75 },
   [Item.BERSERK_GENE]: { [Stat.ATK]: 10 },
-  [Item.SURFBOARD]: { [Stat.SPEED]: 30 },
+  [Item.ELECTIRIZER]: { [Stat.SPEED]: 10 },
   [Item.TERRAIN_EXTENDER]: { [Stat.SHIELD]: 50, [Stat.PP]: 20 },
   [Item.INCENSE]: { [Stat.SPE_DEF]: 10, [Stat.LUCK]: 30 },
   [Item.COOKING_POT]: { [Stat.DEF]: 10 },
@@ -98,14 +98,17 @@ export const ItemStats: { [item in Item]?: { [stat in Stat]?: number } } = {
   [Item.SILK_SCARF]: { [Stat.SHIELD]: 15 },
   [Item.FRIEND_BOW]: { [Stat.SHIELD]: 30 },
   [Item.BLACK_BELT]: { [Stat.SHIELD]: 15, [Stat.CRIT_CHANCE]: 20 },
-  [Item.LUCKY_RIBBON]: { [Stat.DEF]: 10, [Stat.AP]: 50, [Stat.LUCK]: 30 },
+  [Item.NULLIFY_BANDANNA]: { [Stat.SHIELD]: 30 },
+  [Item.LUCKY_RIBBON]: { [Stat.SHIELD]: 15, [Stat.AP]: 50, [Stat.LUCK]: 30 },
   [Item.EXPLOSIVE_BAND]: { [Stat.SHIELD]: 50, [Stat.ATK]: 3 },
   [Item.TWIST_BAND]: { [Stat.SPE_DEF]: 20, [Stat.SHIELD]: 50 },
   [Item.BIG_EATER_BELT]: { [Stat.HP]: 50, [Stat.SHIELD]: 15 },
   [Item.MACH_RIBBON]: { [Stat.SHIELD]: 15, [Stat.SPEED]: 10 },
   [Item.COVER_BAND]: { [Stat.DEF]: 12, [Stat.SHIELD]: 50 },
   [Item.EFFICIENT_BANDANNA]: { [Stat.SHIELD]: 15, [Stat.PP]: 15 },
-  [Item.NULLIFY_BANDANNA]: { [Stat.SHIELD]: 30 }
+  [Item.TATSUGIRI_CURLY]: { [Stat.ATK]: 8 },
+  [Item.TATSUGIRI_DROOPY]: { [Stat.DEF]: 8 },
+  [Item.TATSUGIRI_STRETCHY]: { [Stat.SPEED]: 25 }
 }
 
 export const ItemSellPricesAtTown: { [item in ItemsSoldAtTown]?: number } = {

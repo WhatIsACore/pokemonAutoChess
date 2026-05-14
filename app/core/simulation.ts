@@ -48,7 +48,7 @@ import {
   randomBetween,
   shuffleArray
 } from "../utils/random"
-import { values } from "../utils/schemas"
+import { schemaValues } from "../utils/schemas"
 import { AbilityStrategies, SurfStrategy } from "./abilities/abilities"
 import { Board } from "./board"
 import { DishEffects } from "./dishes"
@@ -64,6 +64,7 @@ import {
   FightingKnockbackEffect,
   FireHitEffect,
   FlyingProtectionEffect,
+  fightingTrainingEffect,
   GroundHoleEffect,
   humanHealEffect,
   MonsterKillEffect,
@@ -71,6 +72,7 @@ import {
   OnFieldDeathEffect,
   onFlowerMonDeath,
   overgrowEffect,
+  pounceWandEffect,
   SoundCryEffect,
   wildBerserkEffect
 } from "./effects/synergies"
@@ -104,14 +106,13 @@ export default class Simulation extends Schema implements ISimulation {
   stormLightningTimer = 0
   tidalWaveTimer = 0
   tidalWaveCounter = 0
+  entities: IPokemonEntity[] = []
 
   constructor(
     id: string,
     room: GameRoom,
-    blueBoard: MapSchema<Pokemon>,
-    redBoard: MapSchema<Pokemon>,
     bluePlayer: Player,
-    redPlayer: Player | undefined,
+    redPlayer: Player | { id: "pve"; board: MapSchema<Pokemon> },
     stageLevel: number,
     weather: Weather,
     isGhostBattle = false
@@ -120,14 +121,17 @@ export default class Simulation extends Schema implements ISimulation {
     this.id = id
     this.room = room
     this.bluePlayer = bluePlayer
-    this.redPlayer = redPlayer
+    this.redPlayer = redPlayer.id === "pve" ? undefined : (redPlayer as Player)
     this.bluePlayerId = bluePlayer.id
-    this.redPlayerId = redPlayer?.id ?? "pve"
+    this.redPlayerId = redPlayer.id
     this.stageLevel = stageLevel
     this.weather = weather
     this.isGhostBattle = isGhostBattle
     this.board = new Board(BOARD_HEIGHT, BOARD_WIDTH)
     this.started = false
+
+    this.bluePlayer.effects.forEach((e) => this.blueEffects.add(e))
+    this.redPlayer?.effects.forEach((e) => this.redEffects.add(e))
 
     // beforeSimulationStart hooks
     const playerEffects: [
@@ -149,6 +153,19 @@ export default class Simulation extends Schema implements ISimulation {
             teamEffects,
             opponentEffects
           })
+          if (isOnBench(pokemon)) {
+            // OnBenchedDuringFightEffect should be applied here
+            if (
+              teamEffects.has(EffectEnum.COACHING) &&
+              pokemon.types.has(Synergy.FIGHTING)
+            ) {
+              fightingTrainingEffect.apply({
+                pokemon,
+                player,
+                simulation: this
+              })
+            }
+          }
         })
       }
     }
@@ -158,9 +175,6 @@ export default class Simulation extends Schema implements ISimulation {
       this.blueEffects.add(weatherEffect)
       this.redEffects.add(weatherEffect)
     }
-
-    bluePlayer.effects.forEach((e) => this.blueEffects.add(e))
-    redPlayer?.effects.forEach((e) => this.redEffects.add(e))
 
     this.finished = false
     this.winnerId = ""
@@ -173,7 +187,7 @@ export default class Simulation extends Schema implements ISimulation {
       this.tidalWaveTimer = 7000
     }
 
-    blueBoard.forEach((pokemon) => {
+    this.bluePlayer.board.forEach((pokemon) => {
       if (!isOnBench(pokemon)) {
         this.addPokemon(
           pokemon,
@@ -184,6 +198,7 @@ export default class Simulation extends Schema implements ISimulation {
       }
     })
 
+    const redBoard = this.redPlayer ? this.redPlayer.board : redPlayer.board
     redBoard.forEach((pokemon) => {
       if (!isOnBench(pokemon)) {
         this.addPokemon(
@@ -195,7 +210,18 @@ export default class Simulation extends Schema implements ISimulation {
       }
     })
 
-    this.applyPostEffects(blueBoard, redBoard)
+    this.applyPostEffects(bluePlayer.board, redBoard)
+  }
+
+  broadcastToSpectators(transfer: Transfer, data: any) {
+    if (!this.room) return
+    const players = this.room.state.players
+    for (const client of this.room.clients) {
+      const spectatedPlayer = players.get(client.userData?.spectatedPlayerId)
+      if (spectatedPlayer?.simulationId === this.id) {
+        client.send(transfer, data)
+      }
+    }
   }
 
   start() {
@@ -207,7 +233,7 @@ export default class Simulation extends Schema implements ISimulation {
     ]) {
       if (player) {
         player.board.forEach((pokemon) => {
-          const entity = values(team).find(
+          const entity = schemaValues(team).find(
             (p) => p.refToBoardPokemon === pokemon
           ) as PokemonEntity | undefined
           if (pokemon.dishes.size > 0) {
@@ -296,6 +322,7 @@ export default class Simulation extends Schema implements ISimulation {
       this.redTeam.set(pokemonEntity.id, pokemonEntity)
       this.redDpsMeter.set(pokemonEntity.id, dps)
     }
+    this.entities.push(pokemonEntity)
 
     pokemon.onSpawn({ entity: pokemonEntity, simulation: this, isSpawn })
     pokemonEntity.getEffects(OnSpawnEffect).forEach((effect) => {
@@ -309,15 +336,21 @@ export default class Simulation extends Schema implements ISimulation {
     if (team === Team.BLUE_TEAM) {
       for (let y = 0; y < this.board.rows; y++) {
         for (let x = 0; x < this.board.columns; x++) {
-          if (this.board.getEntityOnCell(x, y) === undefined) {
+          if (
+            this.board.isOnBoard(x, y) &&
+            this.board.getEntityOnCell(x, y) === undefined
+          ) {
             return { x, y }
           }
         }
       }
     } else {
-      for (let y = 0; y < this.board.rows; y++) {
+      for (let y = this.board.rows - 1; y >= 0; y--) {
         for (let x = this.board.columns - 1; x >= 0; x--) {
-          if (this.board.getEntityOnCell(x, y) === undefined) {
+          if (
+            this.board.isOnBoard(x, y) &&
+            this.board.getEntityOnCell(x, y) === undefined
+          ) {
             return { x, y }
           }
         }
@@ -373,10 +406,7 @@ export default class Simulation extends Schema implements ISimulation {
       const y = positionY + dy * (team === Team.BLUE_TEAM ? 1 : -1)
 
       if (
-        x >= 0 &&
-        x < this.board.columns &&
-        y >= 0 &&
-        y < this.board.rows &&
+        this.board.isOnBoard(x, y) &&
         this.board.getEntityOnCell(x, y) === undefined
       ) {
         return { x, y }
@@ -466,7 +496,7 @@ export default class Simulation extends Schema implements ISimulation {
     }
 
     if (pokemon.types.has(Synergy.ELECTRIC) && pokemon.player) {
-      const nbCellBatteries = values(pokemon.player.items).filter(
+      const nbCellBatteries = schemaValues(pokemon.player.items).filter(
         (item) => item === Item.CELL_BATTERY
       ).length
       if (nbCellBatteries > 0) {
@@ -498,7 +528,7 @@ export default class Simulation extends Schema implements ISimulation {
     })
 
     if (pokemon.passive === Passive.GLUTTON) {
-      pokemon.addMaxHP(20, player)
+      pokemon.addMaxHP(20)
       entity?.addMaxHP(20, entity, 0, false)
       if (pokemon.maxHP > 750) {
         player.titles.add(Title.GLUTTON)
@@ -577,7 +607,7 @@ export default class Simulation extends Schema implements ISimulation {
             if (pokemonCloned.items.has(Item.SHED_SHELL)) {
               const team =
                 teamIndex === Team.BLUE_TEAM ? this.blueTeam : this.redTeam
-              const clonedEntity = values(team).find(
+              const clonedEntity = schemaValues(team).find(
                 (p) => p.refToBoardPokemon.id === pokemonCloned.id
               )
               if (clonedEntity) {
@@ -916,7 +946,7 @@ export default class Simulation extends Schema implements ISimulation {
       case EffectEnum.GUTS:
       case EffectEnum.STURDY:
       case EffectEnum.DEFIANT:
-      case EffectEnum.JUSTIFIED:
+      case EffectEnum.COACHING:
         if (types.has(Synergy.FIGHTING)) {
           pokemon.effects.add(effect)
           pokemon.effectsSet.add(new FightingKnockbackEffect(effect))
@@ -951,23 +981,23 @@ export default class Simulation extends Schema implements ISimulation {
         }
         break
 
-      case EffectEnum.AMNESIA:
+      case EffectEnum.PRECOGNITION:
         if (types.has(Synergy.PSYCHIC)) {
-          pokemon.effects.add(EffectEnum.AMNESIA)
+          pokemon.effects.add(EffectEnum.PRECOGNITION)
           pokemon.addAbilityPower(50, pokemon, 0, false)
         }
         break
 
-      case EffectEnum.LIGHT_SCREEN:
+      case EffectEnum.AURA:
         if (types.has(Synergy.PSYCHIC)) {
-          pokemon.effects.add(EffectEnum.LIGHT_SCREEN)
+          pokemon.effects.add(EffectEnum.AURA)
           pokemon.addAbilityPower(100, pokemon, 0, false)
         }
         break
 
-      case EffectEnum.EERIE_SPELL:
+      case EffectEnum.TRANSCENDENCE:
         if (types.has(Synergy.PSYCHIC)) {
-          pokemon.effects.add(EffectEnum.EERIE_SPELL)
+          pokemon.effects.add(EffectEnum.TRANSCENDENCE)
           pokemon.addAbilityPower(150, pokemon, 0, false)
         }
         break
@@ -1035,6 +1065,15 @@ export default class Simulation extends Schema implements ISimulation {
       case EffectEnum.MOON_FORCE:
         if (types.has(Synergy.FAIRY)) {
           pokemon.effects.add(effect)
+          if (pokemon.player?.items.includes(Item.LONG_WAND)) {
+            pokemon.range += 1
+          }
+          if (pokemon.player?.items.includes(Item.POUNCE_WAND)) {
+            pokemon.effectsSet.add(pounceWandEffect)
+          }
+          if (effect === EffectEnum.MOON_FORCE) {
+            pokemon.addLuck(20, pokemon, 0, false)
+          }
         }
         break
 
@@ -1044,7 +1083,7 @@ export default class Simulation extends Schema implements ISimulation {
         if (types.has(Synergy.DRAGON)) {
           pokemon.effects.add(effect)
           if (player) {
-            const dragonLevel = values(player.board).reduce(
+            const dragonLevel = schemaValues(player.board).reduce(
               (acc, p) =>
                 acc +
                 (p.types.has(Synergy.DRAGON) && !isOnBench(p) ? p.stars : 0),
@@ -1297,7 +1336,7 @@ export default class Simulation extends Schema implements ISimulation {
         const nbFloatStones = player ? count(player.items, Item.FLOAT_STONE) : 0
         pokemon.addSpeed(
           (pokemon.types.has(Synergy.FLYING) ? 20 : 10) + nbFloatStones * 10,
-          pokemon,
+          "environment",
           0,
           false
         )
@@ -1306,7 +1345,7 @@ export default class Simulation extends Schema implements ISimulation {
 
       case EffectEnum.SNOW:
         if (pokemon.types.has(Synergy.ICE) === false) {
-          pokemon.addSpeed(-10, pokemon, 0, false)
+          pokemon.addSpeed(-10, "environment", 0, false)
         }
         break
 
@@ -1316,7 +1355,12 @@ export default class Simulation extends Schema implements ISimulation {
         const nbSmellyClays = opponentPlayer
           ? count(opponentPlayer.items, Item.SMELLY_CLAY)
           : 0
-        pokemon.addDodgeChance(0.15 - 0.05 * nbSmellyClays, pokemon, 0, false)
+        pokemon.addDodgeChance(
+          0.15 - 0.05 * nbSmellyClays,
+          "environment",
+          0,
+          false
+        )
         break
       }
 
@@ -1325,14 +1369,14 @@ export default class Simulation extends Schema implements ISimulation {
           ? count(player.items, Item.BLACK_AUGURITE)
           : 0
 
-        pokemon.addCritChance(10 + 5 * nbBlackAugurite, pokemon, 0, false)
+        pokemon.addCritChance(10 + 5 * nbBlackAugurite, "environment", 0, false)
         break
       }
 
       case EffectEnum.DROUGHT: {
         const nbHeatStones = player ? count(player.items, Item.HEAT_ROCK) : 0
 
-        pokemon.addAttack(3 * nbHeatStones, pokemon, 0, false)
+        pokemon.addAttack(3 * nbHeatStones, "environment", 0, false)
         break
       }
 
@@ -1341,7 +1385,7 @@ export default class Simulation extends Schema implements ISimulation {
         const nbOddStones = player ? count(player.items, Item.ODD_KEYSTONE) : 0
         const luckDebuff =
           10 * nbOddStones - (pokemon.types.has(Synergy.GHOST) ? 0 : 30)
-        pokemon.addLuck(luckDebuff, pokemon, 0, false)
+        pokemon.addLuck(luckDebuff, "environment", 0, false)
         break
       }
 
@@ -1349,7 +1393,7 @@ export default class Simulation extends Schema implements ISimulation {
         const player = pokemon.player
         const nbMistStones = player ? count(player.items, Item.MIST_STONE) : 0
         if (nbMistStones > 0) {
-          pokemon.addSpecialDefense(3 * nbMistStones, pokemon, 0, false)
+          pokemon.addSpecialDefense(3 * nbMistStones, "environment", 0, false)
         }
         break
       }
@@ -1401,7 +1445,7 @@ export default class Simulation extends Schema implements ISimulation {
     if (this.weather === Weather.STORM) {
       this.stormLightningTimer -= dt
       if (this.stormLightningTimer <= 0 && !this.finished) {
-        this.stormLightningTimer = randomBetween(3000, 6000)
+        this.stormLightningTimer = randomBetween(2000, 6000)
         // trigger lightning
         const x = randomBetween(0, this.board.columns - 1)
         const y = randomBetween(0, this.board.rows - 1)
@@ -1419,7 +1463,11 @@ export default class Simulation extends Schema implements ISimulation {
               false
             )
           }
-          if (pokemonOnCell.types.has(Synergy.ELECTRIC) === false) {
+          if (pokemonOnCell.types.has(Synergy.ELECTRIC)){
+            pokemonOnCell.status.addElectricField(pokemonOnCell)
+            pokemonOnCell.addSpeed(20, pokemonOnCell, 0, false)
+            pokemonOnCell.addShield(30, pokemonOnCell, 0, false)
+          } else {
             pokemonOnCell.handleDamage({
               damage: 100,
               board: this.board,
@@ -1546,20 +1594,39 @@ export default class Simulation extends Schema implements ISimulation {
       const isGhostPlayer = this.id !== player.simulationId
       const isGhostOpponent =
         playerId === this.bluePlayerId && this.isGhostBattle
+      const isPvE = opponentPlayerId === "pve"
+      const battleResult =
+        this.winnerId === playerId
+          ? BattleResult.WIN
+          : this.winnerId === opponentPlayerId
+            ? BattleResult.DEFEAT
+            : BattleResult.DRAW
 
       // Add battle result
       if (!isGhostPlayer) {
         player.addBattleResult(
           player.opponentId,
           player.opponentName,
-          this.winnerId === playerId
-            ? BattleResult.WIN
-            : this.winnerId === opponentPlayerId
-              ? BattleResult.DEFEAT
-              : BattleResult.DRAW,
+          battleResult,
           player.opponentAvatar,
           this.weather
         )
+
+        // Compute streak
+        const previousBattleResult = player.history
+          .filter(
+            (stage) => stage.id !== "pve" && stage.result !== BattleResult.DRAW
+          )
+          .map((stage) => stage.result)
+          .at(-2)
+        if (battleResult === BattleResult.DRAW) {
+          // preserve existing streak but lose HP
+        } else if (battleResult !== previousBattleResult) {
+          // reset streak
+          player.streak = 0
+        } else {
+          player.streak += 1
+        }
       }
 
       const client = this.room.clients.find((cli) => cli.auth.uid === playerId)
@@ -1567,7 +1634,7 @@ export default class Simulation extends Schema implements ISimulation {
       // Handle win/loss outcomes
       if (this.winnerId === playerId) {
         // WIN
-        if (this.redPlayerId !== "pve" && !isGhostPlayer) {
+        if (!isPvE && !isGhostPlayer) {
           // no extra gold from PvE wins
           const hasLeadersCrest =
             opponentPlayer?.items.includes(Item.LEADERS_CREST) ?? false
@@ -1592,10 +1659,10 @@ export default class Simulation extends Schema implements ISimulation {
           }
         }
         if (opponentPlayer && !isGhostOpponent) {
-          opponentPlayer.totalPlayerDamageDealt += playerDamage
+          opponentPlayer.gameStats.totalPlayerDamageDealt += playerDamage
           if (
             opponentPlayer.items.includes(Item.MISSION_ORDER_RED) &&
-            opponentPlayer.totalPlayerDamageDealt >= 100
+            opponentPlayer.gameStats.totalPlayerDamageDealt >= 100
           ) {
             opponentPlayer.completeMissionOrder(Item.MISSION_ORDER_RED)
           }
@@ -1607,7 +1674,7 @@ export default class Simulation extends Schema implements ISimulation {
         this.weather !== Weather.NEUTRAL &&
         getSynergyStep(player.synergies, Synergy.ROCK) > 0 &&
         !isGhostPlayer &&
-        this.redPlayerId !== "pve" // No weather rocks collected for PvE rounds
+        !isPvE // No weather rocks collected for PvE rounds
       ) {
         const rockCollected = WeatherRocksByWeather.get(this.weather)
         if (rockCollected) {
@@ -1631,7 +1698,7 @@ export default class Simulation extends Schema implements ISimulation {
     const opponentsCursable = shuffleArray([...opponentTeam.values()]).filter(
       (p) => p.hp > 0
     ) as PokemonEntity[]
-    const curser = values(team).find((e) => e.types.has(Synergy.GHOST))
+    const curser = schemaValues(team).find((e) => e.types.has(Synergy.GHOST))
     // the curser is not important, we just need a reference to an opponent for stat debuffs
     if (!curser) return
 
@@ -1757,7 +1824,7 @@ export default class Simulation extends Schema implements ISimulation {
     for (const y of rowRange) {
       for (let x = 0; x < this.board.columns; x++) {
         const pokemonHit = this.board.getEntityOnCell(x, y)
-        this.board.clearBoardEffect(x, y, this) // clear all board effects
+        this.board.clearBoardEffect(x, y, this) // clear all effects
         if (pokemonHit) {
           if (pokemonHit.team === team) {
             pokemonHit.status.clearNegativeStatus(pokemonHit)
@@ -1804,7 +1871,7 @@ export default class Simulation extends Schema implements ISimulation {
             surf.process(
               pokemonHit,
               this.board,
-              pokemonHit,
+              null,
               false,
               false,
               tidalWaveLevel

@@ -1,9 +1,9 @@
 import { ArraySchema, MapSchema, Schema, type, view } from "@colyseus/schema"
-import { nanoid } from "nanoid"
 import {
   AdditionalPicksStages,
   BOARD_HEIGHT,
   BOARD_WIDTH,
+  FAIRY_WANDS_BY_SYNERGY_LEVEL,
   RegionDetails,
   SynergyTriggers
 } from "../../config"
@@ -34,19 +34,19 @@ import {
   ScarfItem,
   SynergyGemsBuried,
   SynergyGivenByItem,
-  TMs,
   TMsBronze,
   TMsGold,
   TMsSilver,
   ToolsBuried,
+  Wands,
   WeatherRocks
 } from "../../types/enum/Item"
 import { Passive } from "../../types/enum/Passive"
 import {
+  Pillars,
   Pkm,
   PkmFamily,
   PkmIndex,
-  type PkmProposition,
   PkmRegionalBaseVariants,
   PkmRegionalVariants
 } from "../../types/enum/Pokemon"
@@ -54,18 +54,23 @@ import { SpecialGameRule } from "../../types/enum/SpecialGameRule"
 import { Synergy } from "../../types/enum/Synergy"
 import { WandererBehavior, WandererType } from "../../types/enum/Wanderer"
 import { Weather } from "../../types/enum/Weather"
+import { GameStats, initialGameStats } from "../../types/interfaces/GameStats"
 import { IPokemonCollectionItemMongo } from "../../types/interfaces/UserMetadata"
 import { isIn, removeInArray } from "../../utils/array"
 import { getPokemonCustomFromAvatar } from "../../utils/avatar"
-import { getFirstAvailablePositionInBench, isOnBench } from "../../utils/board"
-import { max, min } from "../../utils/number"
+import {
+  getFirstAvailablePositionInBench,
+  getFirstAvailablePositionOnBoard,
+  isOnBench
+} from "../../utils/board"
+import { min } from "../../utils/number"
 import {
   chance,
   pickNRandomIn,
   pickRandomIn,
   shuffleArray
 } from "../../utils/random"
-import { resetArraySchema, values } from "../../utils/schemas"
+import { resetArraySchema, schemaValues } from "../../utils/schemas"
 import { Effects } from "../effects"
 import PokemonFactory, { getPokemonBaseline } from "../pokemon-factory"
 import {
@@ -73,7 +78,9 @@ import {
   PRECOMPUTED_REGIONAL_MONS
 } from "../precomputed/precomputed-pokemon-data"
 import ExperienceManager from "./experience-manager"
+import { GameStatsSchema } from "./game-stats"
 import HistoryItem from "./history-item"
+import { PlayerChoice } from "./player-choice"
 import { Pokemon, PokemonClasses } from "./pokemon"
 import { PokemonCustoms } from "./pokemon-customs"
 import Synergies, { computeSynergies, getSynergyStep } from "./synergies"
@@ -99,10 +106,12 @@ export default class Player extends Schema implements IPlayer {
   @type("string") opponentId: string = ""
   @type("string") opponentName: string = ""
   @type("string") opponentAvatar: string = ""
-  @type("string") opponentTitle: string = ""
+  @type("string") opponentTitle: Title | "WILD" | "" = ""
   @type("string") spectatedPlayerId: string
   @type("uint8") boardSize: number = 0
   @type(["string"]) items = new ArraySchema<Item>()
+  @type(["string"]) scarvesItems = new ArraySchema<Item>()
+  @type(["string"]) fairyWands = new ArraySchema<Item>()
   @type("uint8") rank: number
   @type("uint16") elo: number
   @type("uint16") games: number // number of games played on this account
@@ -113,9 +122,7 @@ export default class Player extends Schema implements IPlayer {
   @type("string") emotesUnlocked = ""
   @type("string") title: Title | ""
   @type("string") role: Role
-  @view() @type(["string"]) itemsProposition = new ArraySchema<Item>()
-  @view() @type(["string"]) pokemonsProposition =
-    new ArraySchema<PkmProposition>()
+  @type([PlayerChoice]) choices = new ArraySchema<PlayerChoice>()
   @type(["string"]) pveRewards = new ArraySchema<Item>()
   @type(["string"]) pveRewardsPropositions = new ArraySchema<Item>()
   @type("float32") loadingProgress: number = 0
@@ -130,9 +137,6 @@ export default class Player extends Schema implements IPlayer {
   @type("string") map: DungeonPMDO | "town"
   @type({ set: "string" }) effects: Effects = new Effects()
   @type(["string"]) regionalPokemons = new ArraySchema<Pkm>()
-  @type("uint16") rerollCount: number = 0
-  @type("uint16") totalMoneyEarned: number = 0
-  @type("uint16") totalPlayerDamageDealt: number = 0
   @type("float32") eggChance: number = 0
   @type("float32") goldenEggChance: number = 0
   @type("uint8") cellBattery: number = 0
@@ -140,6 +144,9 @@ export default class Player extends Schema implements IPlayer {
     string,
     Wanderer
   >()
+  @type(GameStatsSchema) gameStats: GameStats = new GameStatsSchema({
+    ...initialGameStats
+  })
   commonRegionalPool: Pkm[] = new Array<Pkm>()
   uncommonRegionalPool: Pkm[] = new Array<Pkm>()
   rareRegionalPool: Pkm[] = new Array<Pkm>()
@@ -149,7 +156,6 @@ export default class Player extends Schema implements IPlayer {
   opponents: Map<string, number> = new Map<string, number>()
   titles: Set<Title> = new Set<Title>()
   artificialItems: Item[] = pickNRandomIn(ArtificialItems, 3)
-  scarvesItems: Item[] = []
   buriedItems: (Item | null)[] = initBuriedItems()
   tms: Item[] = pickRandomTMs()
   weatherRocks: Item[] = []
@@ -257,14 +263,14 @@ export default class Player extends Schema implements IPlayer {
       return // do not count money earned by pokemons from a ghost player
     }
     this.money += value
-    if (countTotalEarned && value > 0) this.totalMoneyEarned += value
+    if (countTotalEarned && value > 0) this.gameStats.totalMoneyEarned += value
     this.board.forEach((pokemon) => {
       if (pokemon.evolutionRule instanceof ConditionBasedEvolutionRule) {
         pokemon.evolutionRule.tryEvolve(pokemon, this, 0) // for Goldengo evolution ; TOFIX: pass stagelevel instead of 0
       }
     })
     if (
-      this.totalMoneyEarned >= 200 &&
+      this.gameStats.totalMoneyEarned >= 200 &&
       this.items.includes(Item.MISSION_ORDER_GOLD)
     ) {
       this.completeMissionOrder(Item.MISSION_ORDER_GOLD)
@@ -290,7 +296,7 @@ export default class Player extends Schema implements IPlayer {
   }
 
   getPokemonAt(x: number, y: number): Pokemon | undefined {
-    return values(this.board).find(
+    return schemaValues(this.board).find(
       (pokemon) => pokemon.positionX == x && pokemon.positionY == y
     )
   }
@@ -316,7 +322,7 @@ export default class Player extends Schema implements IPlayer {
   }
 
   updateSynergies() {
-    const pokemons: Pokemon[] = values(this.board)
+    const pokemons: Pokemon[] = schemaValues(this.board)
     const previousSynergies = this.synergies.toMap()
     let updatedSynergies = computeSynergies(
       pokemons,
@@ -382,18 +388,25 @@ export default class Player extends Schema implements IPlayer {
       this.updateChefsHats()
     }
 
+    if (
+      previousSynergies.get(Synergy.FAIRY) !==
+      updatedSynergies.get(Synergy.FAIRY)
+    ) {
+      this.updateFairyWands(previousSynergies, updatedSynergies)
+    }
+
     this.effects.update(this.synergies, this.board)
 
     if (
       this.items.includes(Item.MISSION_ORDER_GREEN) &&
-      this.synergies.countActiveSynergies() >= 8
+      this.synergies.countActiveSynergies() >= 9
     ) {
       this.completeMissionOrder(Item.MISSION_ORDER_GREEN)
     }
 
     if (
       this.items.includes(Item.MISSION_ORDER_PINK) &&
-      values(this.board).filter((p) => p.stars >= 3).length >= 5
+      schemaValues(this.board).filter((p) => p.stars >= 3).length >= 5
     ) {
       this.completeMissionOrder(Item.MISSION_ORDER_PINK)
     }
@@ -430,7 +443,7 @@ export default class Player extends Schema implements IPlayer {
 
       const removeArtificialItem = (item: Item) => {
         // first check held items
-        const pokemons = values(this.board)
+        const pokemons = schemaValues(this.board)
         for (const pokemon of pokemons) {
           if (pokemon.items.has(item)) {
             pokemon.removeItem(item, this)
@@ -471,11 +484,15 @@ export default class Player extends Schema implements IPlayer {
     updatedSynergies: Map<Synergy, number>
   ): boolean {
     let needsRecomputingSynergiesAgain = false
-    const previousNbScarves = getSynergyStep(previousSynergies, Synergy.NORMAL)
-    const previousScarves = this.getScarvesItemsWithNbScarves(previousNbScarves)
-
-    const newNbScarves = getSynergyStep(updatedSynergies, Synergy.NORMAL)
-    const newScarves = this.getScarvesItemsWithNbScarves(newNbScarves)
+    const previousNbNormalScarves = getSynergyStep(
+      previousSynergies,
+      Synergy.NORMAL
+    )
+    const previousScarves = this.getScarvesItemsWithNbScarves(
+      previousNbNormalScarves
+    )
+    const newNbNormalScarves = getSynergyStep(updatedSynergies, Synergy.NORMAL)
+    const newScarves = this.getScarvesItemsWithNbScarves(newNbNormalScarves)
 
     if (newScarves.length > previousScarves.length) {
       // some scarves are gained
@@ -488,14 +505,11 @@ export default class Player extends Schema implements IPlayer {
       })
     } else if (newScarves.length < previousScarves.length) {
       // some scarves are lost
-      const lostScarves = previousScarves.slice(
-        newScarves.length,
-        previousScarves.length
-      )
-
+      const lostScarves = [...previousScarves]
+      newScarves.forEach((s) => removeInArray(lostScarves, s))
       const removeScarf = (item: ScarfItem) => {
         // first check held items
-        const pokemons = values(this.board)
+        const pokemons = schemaValues(this.board)
         for (const pokemon of pokemons) {
           if (pokemon.items.has(item)) {
             pokemon.removeItem(item, this)
@@ -551,12 +565,14 @@ export default class Player extends Schema implements IPlayer {
       const lostTMs = this.tms.slice(newNbTMs, previousNbTMs)
       lostTMs.forEach((tm) => {
         removeInArray(this.items, tm)
-        const pokemonWithThisTm = values(this.board).find(
+        const pokemonWithThisTm = schemaValues(this.board).find(
           (p) => p.tm === AbilityPerTM[tm]
         )
         if (pokemonWithThisTm) {
           pokemonWithThisTm.tm = Ability.DEFAULT
-          pokemonWithThisTm.skill = getPokemonData(pokemonWithThisTm.name).skill
+          const baseData = getPokemonData(pokemonWithThisTm.name)
+          pokemonWithThisTm.skill = baseData.skill
+          pokemonWithThisTm.maxPP = baseData.pp
         }
       })
     }
@@ -583,7 +599,7 @@ export default class Player extends Schema implements IPlayer {
   updateChefsHats() {
     const gourmetLevel = getSynergyStep(this.synergies, Synergy.GOURMET)
     const newNbHats = [0, 1, 1, 2][gourmetLevel] ?? 0
-    const hatHolders = values(this.board).filter((p) =>
+    const hatHolders = schemaValues(this.board).filter((p) =>
       p.items.has(Item.CHEF_HAT)
     )
     let currentNbHats =
@@ -605,6 +621,84 @@ export default class Player extends Schema implements IPlayer {
         }
       }
     } while (newNbHats !== currentNbHats)
+  }
+
+  updateFairyWands(
+    previousSynergies: Map<Synergy, number>,
+    updatedSynergies: Map<Synergy, number>
+  ) {
+    const previousFairyLevel = getSynergyStep(previousSynergies, Synergy.FAIRY)
+    const newFairyLevel = getSynergyStep(updatedSynergies, Synergy.FAIRY)
+    const nbWandsByLevel = [0, 1, 2, 3, 4]
+    const previousNbWands = nbWandsByLevel[previousFairyLevel] ?? 0
+    const newNbWands = nbWandsByLevel[newFairyLevel] ?? 0
+    const currentNbWands = this.items.filter((item) => isIn(Wands, item)).length
+
+    if (currentNbWands < newNbWands) {
+      // some wands are gained
+      const gainedWands = this.fairyWands.slice(previousNbWands, newNbWands)
+      if (
+        gainedWands.length < newNbWands - currentNbWands &&
+        newFairyLevel - 1 in FAIRY_WANDS_BY_SYNERGY_LEVEL &&
+        this.choices.filter((c) => c.type === "wand").length === 0
+      ) {
+        // player has to choose between wands
+        this.choices.push(
+          new PlayerChoice({
+            type: "wand",
+            items: pickNRandomIn(
+              FAIRY_WANDS_BY_SYNERGY_LEVEL[newFairyLevel - 1],
+              3
+            )
+          })
+        )
+      }
+      this.items.push(...gainedWands)
+    } else if (newNbWands < previousNbWands) {
+      // some wands are lost, we need to remove them from the inventory
+      const lostWands = this.fairyWands.slice(newNbWands, previousNbWands)
+      lostWands.forEach((wand) => {
+        removeInArray(this.items, wand)
+      })
+    }
+  }
+
+  updatePillars() {
+    const expectedNbPillarsByRank = [0, 0, 0]
+    schemaValues(this.board)
+      .filter(
+        (p) => getPokemonBaseline(p.name) === Pkm.TIMBURR && !isOnBench(p)
+      )
+      .forEach((p) => {
+        expectedNbPillarsByRank[p.stars - 1] +=
+          p.name === Pkm.CONKELDURR ? 2 : 1
+      })
+
+    for (let rank = 0; rank < 3; rank++) {
+      const currentPillars = schemaValues(this.board).filter(
+        (p) => p.name === Pillars[rank]
+      )
+      const nbExpectedPillars = expectedNbPillarsByRank[rank]
+      if (currentPillars.length < nbExpectedPillars) {
+        const nbPillarsToAdd = nbExpectedPillars - currentPillars.length
+        for (let i = 0; i < nbPillarsToAdd; i++) {
+          const freeSpace = getFirstAvailablePositionOnBoard(this.board, 1)
+          if (freeSpace) {
+            const pillar = PokemonFactory.createPokemonFromName(
+              Pillars[rank],
+              this
+            )
+            pillar.positionX = freeSpace[0]
+            pillar.positionY = freeSpace[1]
+            this.board.set(pillar.id, pillar)
+          }
+        }
+      } else if (nbExpectedPillars < currentPillars.length) {
+        for (let i = 0; i < currentPillars.length - nbExpectedPillars; i++) {
+          this.board.delete(currentPillars[i].id)
+        }
+      }
+    }
   }
 
   updateRegionalPool(
@@ -661,7 +755,7 @@ export default class Player extends Schema implements IPlayer {
       }
 
       // Cannot be a ConditionBasedEvolutionRule because it has another CountEvolutionRule for Wormadam
-      const burmys = values(this.board).filter(
+      const burmys = schemaValues(this.board).filter(
         (p) => p.passive === Passive.BURMY
       )
       if (burmys.length > 0 && state.stageLevel >= 20) {
@@ -789,10 +883,15 @@ export default class Player extends Schema implements IPlayer {
   getFinalizedLines(): Set<Pkm> {
     if (this.specialGameRule === SpecialGameRule.FAMILY_OUTING) return new Set() // in family outing mode, do not remove finished lines from shop
     const finals = new Set(
-      values(this.board)
+      schemaValues(this.board)
         .filter((pokemon) => pokemon.final)
         .map((pokemon) => getPokemonBaseline(pokemon.name))
     )
+    this.pokemonsTrainingInDojo.forEach((pokemonInDojo) => {
+      if (pokemonInDojo.pokemon.final) {
+        finals.add(getPokemonBaseline(pokemonInDojo.pokemon.name))
+      }
+    })
     // special case for burmy line because of the exclusive convergent evolution rule
     if (finals.has(Pkm.BURMY_PLANT)) {
       finals.add(Pkm.BURMY_TRASH)
@@ -803,18 +902,12 @@ export default class Player extends Schema implements IPlayer {
 
   completeMissionOrder(missionOrder: MissionOrder) {
     removeInArray<Item>(this.items, missionOrder)
-    const id = nanoid()
-    this.wanderers.set(
-      id,
-      new Wanderer({
-        id,
-        shiny: false,
-        pkm: Pkm.CHATOT,
-        type: WandererType.DIALOG,
-        behavior: WandererBehavior.SPECTATE
-      })
-    )
-
+    this.spawnWanderingPokemon({
+      shiny: false,
+      pkm: Pkm.CHATOT,
+      type: WandererType.DIALOG,
+      behavior: WandererBehavior.SPECTATE
+    })
     setTimeout(() => {
       this.addMoney(30, true, null)
     }, 7000)
@@ -826,6 +919,99 @@ export default class Player extends Schema implements IPlayer {
       this.items.push(Item.CELL_BATTERY)
       this.cellBattery %= 100
     }
+  }
+
+  updateGameStats(state: GameState) {
+    const simulation = state.simulations.get(this.simulationId)
+    if (!simulation) return
+    const team = simulation.entities.filter((e) => e.team === this.team)
+
+    this.gameStats.maxAP = Math.max(
+      this.gameStats.maxAP,
+      ...team.flatMap((e) => e.ap)
+    )
+    this.gameStats.maxAttack = Math.max(
+      this.gameStats.maxAttack,
+      ...team.flatMap((e) => e.atk)
+    )
+    this.gameStats.maxDefense = Math.max(
+      this.gameStats.maxDefense,
+      ...team.flatMap((e) => e.def)
+    )
+    this.gameStats.maxSpecialDefense = Math.max(
+      this.gameStats.maxSpecialDefense,
+      ...team.flatMap((e) => e.speDef)
+    )
+    this.gameStats.maxHP = Math.max(
+      this.gameStats.maxHP,
+      ...team.flatMap((e) => e.hp)
+    )
+    this.gameStats.maxSpeed = Math.max(
+      this.gameStats.maxSpeed,
+      ...team.flatMap((e) => e.speed)
+    )
+
+    const dps = simulation.getDpsMeter(this.id)
+    if (dps) {
+      const dpsList = schemaValues(dps)
+      this.gameStats.maxHeal = Math.max(
+        this.gameStats.maxHeal,
+        ...dpsList.map((d) => d.heal)
+      )
+      this.gameStats.maxShield = Math.max(
+        this.gameStats.maxShield,
+        ...dpsList.map((d) => d.shield)
+      )
+      this.gameStats.maxPhysicalDamage = Math.max(
+        this.gameStats.maxPhysicalDamage,
+        ...dpsList.map((d) => d.physicalDamage)
+      )
+      this.gameStats.maxSpecialDamage = Math.max(
+        this.gameStats.maxSpecialDamage,
+        ...dpsList.map((d) => d.specialDamage)
+      )
+      this.gameStats.maxTrueDamage = Math.max(
+        this.gameStats.maxTrueDamage,
+        ...dpsList.map((d) => d.trueDamage)
+      )
+    }
+
+    if (this.history.at(-1)?.result === BattleResult.WIN) {
+      this.gameStats.maxWinStreak = Math.max(
+        this.gameStats.maxWinStreak,
+        this.streak
+      )
+    }
+  }
+
+  spawnWanderingPokemon({
+    pkm,
+    type,
+    behavior,
+    data,
+    delay = 0,
+    shiny = chance(0.01)
+  }: {
+    pkm: Pkm
+    type: WandererType
+    behavior: WandererBehavior
+    data?: string
+    delay?: number
+    shiny?: boolean
+  }): Wanderer {
+    const id = crypto.randomUUID()
+    const wanderer = new Wanderer({
+      id,
+      pkm,
+      type,
+      behavior,
+      data,
+      shiny
+    })
+    setTimeout(() => {
+      this.wanderers.set(id, wanderer)
+    }, delay)
+    return wanderer
   }
 }
 

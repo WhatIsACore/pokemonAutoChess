@@ -30,15 +30,15 @@ export const RarityCost: { [key in Rarity]: number } = Object.freeze({
 })
 
 export const RarityColor: { [key in Rarity]: string } = {
-  [Rarity.COMMON]: "#a0a0a0",
-  [Rarity.UNCOMMON]: "#3bc95e",
-  [Rarity.RARE]: "#41bfcc",
-  [Rarity.EPIC]: "#927FFF",
-  [Rarity.ULTRA]: "#E53B3B",
-  [Rarity.UNIQUE]: "#ffffff",
-  [Rarity.LEGENDARY]: "#e6cb49",
-  [Rarity.SPECIAL]: "#E58EE5",
-  [Rarity.HATCH]: "#b9915a"
+  [Rarity.COMMON]: "var(--color-rarity-common)",
+  [Rarity.UNCOMMON]: "var(--color-rarity-uncommon)",
+  [Rarity.RARE]: "var(--color-rarity-rare)",
+  [Rarity.EPIC]: "var(--color-rarity-epic)",
+  [Rarity.ULTRA]: "var(--color-rarity-ultra)",
+  [Rarity.UNIQUE]: "var(--color-rarity-unique)",
+  [Rarity.LEGENDARY]: "var(--color-rarity-legendary)",
+  [Rarity.SPECIAL]: "var(--color-rarity-special)",
+  [Rarity.HATCH]: "var(--color-rarity-hatch)"
 }
 
 export const BoosterRarityProbability: { [key in Rarity]: number } = {
@@ -46,11 +46,11 @@ export const BoosterRarityProbability: { [key in Rarity]: number } = {
   [Rarity.UNCOMMON]: 0.2,
   [Rarity.RARE]: 0.2,
   [Rarity.EPIC]: 0.18,
-  [Rarity.ULTRA]: 0.06,
+  [Rarity.ULTRA]: 0.04,
   [Rarity.UNIQUE]: 0.1,
-  [Rarity.LEGENDARY]: 0.05,
-  [Rarity.HATCH]: 0.06,
-  [Rarity.SPECIAL]: 0.03
+  [Rarity.LEGENDARY]: 0.06,
+  [Rarity.HATCH]: 0.05,
+  [Rarity.SPECIAL]: 0.05
 }
 
 export const RarityProbabilityPerLevel: { [key: number]: number[] } = {
@@ -71,9 +71,9 @@ export const MIN_STAGE_FOR_DITTO = 6
 export const EEVEE_RATE = 1 / 20
 export const KECLEON_RATE = 1 / 400
 export const ARCEUS_RATE = 1 / 400
-export const UNOWN_RATE_AMNESIA = 5 / 100
-export const UNOWN_LIGHT_SCREEN_NB_SHOPS_INTERVAL = 3
-export const UNOWN_EERIE_SPELL_NB_SHOPS_INTERVAL = 10
+export const UNOWN_PSY3_NB_SHOPS_INTERVAL = 5
+export const UNOWN_PSY5_NB_SHOPS_INTERVAL = 3
+export const UNOWN_PSY7_NB_SHOPS_INTERVAL = 10
 export const FALINKS_TROOPER_RATE = 4 / 100
 export const REMORAID_RATE = 1 / 3
 
@@ -84,6 +84,14 @@ export const HONEY_CHANCE = 5 / 100
 export const REPEAT_BALL_LEGENDARY_CAP = 120
 export const REPEAT_BALL_UNIQUE_CAP = 80
 export const REPEAT_BALL_UNIQUE_INTERVAL = 10
+
+export const AQUA_MONICA_CHANCE = 5 / 100
+export const FIERY_DRUM_CHANCE = 5 / 100
+export const GRASS_CORNET_CHANCE = 5 / 100
+export const ICY_FLUTE_CHANCE = 5 / 100
+export const ROCK_HORN_CHANCE = 5 / 100
+export const SKY_MELODICA_CHANCE = 5 / 100
+export const TERRA_CYMBAL_CHANCE = 5 / 100
 
 export const HIGH_ROLLER_CHANCE = 2 / 100
 

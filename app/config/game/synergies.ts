@@ -1,5 +1,5 @@
 import { Rarity } from "../../types/enum/Game"
-import { FishingRod, Item } from "../../types/enum/Item"
+import { FishingRod, Item, ShinyItem } from "../../types/enum/Item"
 import { Synergy } from "../../types/enum/Synergy"
 
 export const SynergyTriggers: { [key in Synergy]: number[] } = {
@@ -71,6 +71,18 @@ export const MONSTER_MAX_HP_BUFF_FACTOR_PER_SYNERGY_LEVEL = [0.2, 0.4, 0.6, 0.6]
 export const FIELD_HEAL_PER_SYNERGY_LEVEL = [30, 40, 50]
 export const FIELD_SPEED_BUFF_PER_SYNERGY_LEVEL = [15, 20, 25]
 
+export const FAIRY_WANDS_BY_SYNERGY_LEVEL = [
+  [Item.LONG_WAND, Item.SPIRIT_WAND, Item.HP_SWAP_WAND, Item.BLAST_WAND],
+  [Item.SLUMBER_WAND, Item.SLOW_WAND, Item.PETRIFY_WAND, Item.CONFUSE_WAND],
+  [
+    Item.TWO_EDGED_WAND,
+    Item.POUNCE_WAND,
+    Item.SURROUND_WAND,
+    Item.GUIDING_WAND
+  ],
+  [Item.TUNNEL_WAND, Item.WHIRLWIND_WAND, Item.SWITCHER_WAND, Item.WARP_WAND]
+]
+
 export const UNOWN_ENCOUNTER_CHANCE = 0.033
 export const SHINY_UNOWN_ENCOUNTER_CHANCE = 0.05
 export const SHARDS_PER_UNOWN_WANDERER = 50
@@ -81,6 +93,20 @@ export const GOLDEN_BERRY_TREE_TYPES = [
   Item.GOLDEN_NANAB_BERRY,
   Item.GOLDEN_PINAP_BERRY
 ]
+
+export const GoldenEggItems = [
+  Item.DYNAMAX_BAND,
+  Item.SHINY_STONE,
+  Item.RARE_CANDY,
+  Item.EVIOLITE,
+  Item.WHITE_FLUTE,
+  Item.GOLD_BOTTLE_CAP,
+  Item.ABSORB_BULB,
+  Item.SACRED_ASH,
+  Item.COMET_SHARD,
+  Item.REPEAT_BALL,
+  Item.GOLD_BOW
+] satisfies ShinyItem[]
 
 // Synergy color mapping extracted from SVG fill colors
 export const SYNERGY_COLORS: Record<Synergy, `#${string}`> = {

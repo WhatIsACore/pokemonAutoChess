@@ -1,22 +1,24 @@
-import React, { useCallback, useState } from "react"
+import firebase from "firebase/compat/app"
+import React, { useCallback, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Tab, TabList, TabPanel, Tabs } from "react-tabs"
 import { IGameRecord } from "../../../../../models/colyseus-models/game-record"
-import { Role, Title } from "../../../../../types"
+import { ISuggestionUser, Role, Title } from "../../../../../types"
+import { debounce } from "../../../../../utils/function"
+import { keys } from "../../../../../utils/object"
 import { useAppDispatch, useAppSelector } from "../../../hooks"
 import {
   ban,
   giveBooster,
   giveRole,
   giveTitle,
-  heapSnapshot,
   searchById,
-  searchName,
   unban
 } from "../../../network"
-import { setSearchedUser, setSuggestions } from "../../../stores/LobbyStore"
+import { setSearchedUser } from "../../../stores/LobbyStore"
 import { AccountTab } from "./account-tab"
 import { AvatarTab } from "./avatar-tab"
+import { EloTab } from "./elo-tab"
 import { GadgetsTab } from "./gadgets-tab"
 import GameHistory from "./game-history"
 import PlayerBox from "./player-box"
@@ -31,16 +33,57 @@ export default function Profile() {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const user = useAppSelector((state) => state.network.profile)
-  const suggestions = useAppSelector((state) => state.lobby.suggestions)
+  const [suggestions, setSuggestions] = useState<ISuggestionUser[]>([])
   const searchedUser = useAppSelector((state) => state.lobby.searchedUser)
 
   const profile = searchedUser ?? user
   const [gameHistory, setGameHistory] = useState<IGameRecord[]>([])
   const [rightPanel, setRightPanel] = useState<"chat" | "game">("game")
 
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>("")
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  async function searchName(query: string) {
+    abortControllerRef.current = new AbortController()
+    const { signal } = abortControllerRef.current
+    setLoading(true)
+    setError("")
+    try {
+      const token = await firebase.auth().currentUser?.getIdToken()
+      const res = await fetch(`/players?name=${encodeURIComponent(query)}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        signal
+      })
+      if (res.ok) {
+        const suggestions = await res.json()
+        if (suggestions.length === 0) {
+          setError(t("no_results_found"))
+        } else {
+          setSuggestions(suggestions)
+          setError("")
+        }
+      } else {
+        setError(res.statusText)
+      }
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        setError(err.message)
+      }
+    }
+    setLoading(false)
+  }
+
+  const debouncedSearchName = useRef(debounce(searchName, 500)).current
+
   function onSearchQueryChange(query: string) {
+    abortControllerRef.current?.abort()
     if (query) {
-      searchName(query)
+      debouncedSearchName(query)
     } else {
       resetSearch()
     }
@@ -49,7 +92,8 @@ export default function Profile() {
   const resetSearch = useCallback(
     (user = searchedUser) => {
       dispatch(setSearchedUser(user))
-      dispatch(setSuggestions([]))
+      setSuggestions([])
+      setError("")
     },
     [dispatch]
   )
@@ -58,7 +102,7 @@ export default function Profile() {
     <div className="profile-modal">
       <div className="profile-box">
         <h2>
-          {profile?.displayName ?? ""} {t("profile")}
+          {profile?.displayName ?? ""} {t("profile.title")}
         </h2>
         {profile && <PlayerBox user={profile} history={gameHistory} />}
       </div>
@@ -66,8 +110,18 @@ export default function Profile() {
       <SearchBar onChange={onSearchQueryChange} />
 
       <div className="profile-actions">
-        {suggestions.length > 0 ? (
-          <SearchResults />
+        {loading ? (
+          <div className="loading">{t("loading")}</div>
+        ) : error ? (
+          <div className="error">{error}</div>
+        ) : suggestions.length > 0 ? (
+          <SearchResults
+            suggestions={suggestions}
+            onSelect={(suggestion) => {
+              resetSearch()
+              searchById(suggestion.id)
+            }}
+          />
         ) : searchedUser ? (
           <OtherProfileActions
             rightPanel={rightPanel}
@@ -93,11 +147,12 @@ function MyProfileMenu() {
   return (
     <Tabs>
       <TabList>
-        <Tab>{t("progress")}</Tab>
+        <Tab>{t("profile.progress.title")}</Tab>
         <Tab>{t("avatar")}</Tab>
         <Tab>{t("title_label")}</Tab>
         <Tab>{t("gadgets")}</Tab>
-        <Tab>{t("account")}</Tab>
+        <Tab>{t("profile.elo_tab.title")}</Tab>
+        <Tab>{t("profile.account.title")}</Tab>
       </TabList>
 
       <TabPanel>
@@ -111,6 +166,9 @@ function MyProfileMenu() {
       </TabPanel>
       <TabPanel>
         <GadgetsTab />
+      </TabPanel>
+      <TabPanel>
+        <EloTab />
       </TabPanel>
       <TabPanel>
         <AccountTab />
@@ -145,20 +203,13 @@ function OtherProfileActions(props: {
       </button>
     ) : null
 
-  const heapSnapshotButton =
-    user && role && role === Role.ADMIN ? (
-      <button className="bubbly red" onClick={() => heapSnapshot()}>
-        {t("heap_snapshot")}
-      </button>
-    ) : null
-
   const banButton =
     user && role && (role === Role.ADMIN || role === Role.MODERATOR) ? (
       <button
         className="bubbly red"
         onClick={() => {
           const reason = prompt(`Reason for the ban:`)
-          ban({ uid: user.uid, reason: reason ? reason : "" })
+          ban({ uid: user.uid, reason: reason ?? "" })
         }}
       >
         {t("ban_user")}
@@ -170,8 +221,8 @@ function OtherProfileActions(props: {
       <button
         className="bubbly red"
         onClick={() => {
-          unban({ uid: user.uid, name: user.displayName })
-          alert(`${user.displayName} has been unbanned`)
+          const reason = prompt(`Reason for the unban:`)
+          unban({ uid: user.uid, reason: reason ?? "" })
         }}
       >
         {t("unban_user")}
@@ -220,9 +271,9 @@ function OtherProfileActions(props: {
             setProfileRole(e.target.value as Role)
           }}
         >
-          {Object.keys(Role).map((r) => (
+          {keys(Role).map((r) => (
             <option key={r} value={r}>
-              {t("role." + r).toUpperCase()}
+              {t(`role.${r}`).toUpperCase()}
             </option>
           ))}
         </select>
@@ -259,7 +310,6 @@ function OtherProfileActions(props: {
   return role === Role.ADMIN || role === Role.MODERATOR ? (
     <>
       {giveButton}
-      {heapSnapshotButton}
       {roleButton}
       {titleButton}
       {user?.banned ? unbanButton : banButton}

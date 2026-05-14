@@ -5,13 +5,7 @@ import {
   TournamentBracketSchema,
   TournamentSchema
 } from "../../../models/colyseus-models/tournament"
-import {
-  IChatV2,
-  IGameMetadata,
-  IPreparationMetadata,
-  ISuggestionUser
-} from "../../../types"
-import type { Booster } from "../../../types/Booster"
+import { IChatV2, IGameMetadata, IPreparationMetadata } from "../../../types"
 import { Language } from "../../../types/enum/Language"
 import {
   ILeaderboardBotInfo,
@@ -31,9 +25,6 @@ export interface IUserLobbyState {
   tabIndex: number
   preparationRooms: RoomAvailable[]
   gameRooms: RoomAvailable[]
-  boosterContent: Booster
-  lastBoostersOpened: Booster[]
-  suggestions: ISuggestionUser[]
   language: Language
   tournaments: TournamentSchema[]
   ccu: number
@@ -41,9 +32,6 @@ export interface IUserLobbyState {
 
 const initialState: IUserLobbyState = {
   language: Language.en,
-  suggestions: [],
-  boosterContent: [],
-  lastBoostersOpened: [],
   messages: [],
   leaderboard: [],
   botLeaderboard: [],
@@ -125,17 +113,6 @@ export const lobbySlice = createSlice({
       action: PayloadAction<IUserMetadataClient | undefined>
     ) => {
       state.searchedUser = action.payload
-      state.suggestions = []
-    },
-    setBoosterContent: (state, action: PayloadAction<Booster>) => {
-      state.boosterContent = action.payload
-      state.lastBoostersOpened.push([...action.payload])
-    },
-    resetLastBoostersOpened: (state) => {
-      state.lastBoostersOpened = []
-    },
-    setSuggestions: (state, action: PayloadAction<ISuggestionUser[]>) => {
-      state.suggestions = action.payload
     },
     resetLobby: () => initialState,
     addTournament: (state, action: PayloadAction<TournamentSchema>) => {
@@ -237,8 +214,6 @@ export const lobbySlice = createSlice({
 
 export const {
   removeMessage,
-  setBoosterContent,
-  resetLastBoostersOpened,
   pushMessage,
   setLeaderboard,
   setBotLeaderboard,
@@ -250,7 +225,6 @@ export const {
   setCcu,
   setSearchedUser,
   resetLobby,
-  setSuggestions,
   addTournament,
   removeTournament,
   changeTournament,

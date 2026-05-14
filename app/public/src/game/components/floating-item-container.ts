@@ -1,4 +1,4 @@
-import { GameObjects } from "phaser"
+import Phaser, { GameObjects } from "phaser"
 import { Item } from "../../../../types/enum/Item"
 import { preference } from "../../preferences"
 import { DEPTH } from "../depths"
@@ -140,8 +140,6 @@ export class FloatingItemContainer extends GameObjects.Container {
     pointer: Phaser.Input.Pointer,
     event: Phaser.Types.Input.EventData
   ) {
-    //this.parentContainer.bringToTop(this)
-    event.stopPropagation()
     if (pointer.rightButtonDown() && !preference("showDetailsOnHover")) {
       if (!this.detail?.visible) {
         this.openDetail()

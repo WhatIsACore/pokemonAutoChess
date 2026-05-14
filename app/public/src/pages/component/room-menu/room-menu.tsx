@@ -1,7 +1,7 @@
 import { RoomAvailable } from "@colyseus/sdk"
-import React, { useState } from "react"
+import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router"
 import { Tab, TabList, TabPanel, Tabs } from "react-tabs"
 import { IPreparationMetadata, Role, Transfer } from "../../../../../types"
 import { GameMode } from "../../../../../types/enum/Game"
@@ -9,7 +9,6 @@ import { block, throttle } from "../../../../../utils/function"
 import { joinExistingPreparationRoom } from "../../../game/lobby-logic"
 import { useAppDispatch, useAppSelector } from "../../../hooks"
 import { rooms } from "../../../network"
-//import { mockRooms } from "../../../../../models/mock-data/room-listing"
 import { GameModeIcon } from "../icons/game-mode-icon"
 import { IngameRoomsList } from "./game-rooms-menu"
 import RoomItem from "./room-item"
@@ -163,7 +162,6 @@ export function RoomList({
   gameMode?: GameMode
   onRoomAction: (room: RoomAvailable, action: string) => void
 }) {
-  const { t } = useTranslation()
   const preparationRooms: RoomAvailable[] = useAppSelector(
     (state) => state.lobby.preparationRooms
   )

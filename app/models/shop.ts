@@ -1,14 +1,18 @@
 import {
+  AQUA_MONICA_CHANCE,
   ARCEUS_RATE,
   BuyPrices,
   DITTO_RATE,
   EEVEE_RATE,
   FALINKS_TROOPER_RATE,
+  FIERY_DRUM_CHANCE,
   FishRarityProbability,
+  GRASS_CORNET_CHANCE,
   getAltFormForPlayer,
   getUnownsPoolPerStage,
   HIGH_ROLLER_CHANCE,
   HONEY_CHANCE,
+  ICY_FLUTE_CHANCE,
   INCENSE_CHANCE,
   KECLEON_RATE,
   LegendaryPool,
@@ -25,11 +29,14 @@ import {
   REPEAT_BALL_LEGENDARY_CAP,
   REPEAT_BALL_UNIQUE_CAP,
   REPEAT_BALL_UNIQUE_INTERVAL,
+  ROCK_HORN_CHANCE,
   SellPrices,
   SHOP_SIZE,
-  UNOWN_EERIE_SPELL_NB_SHOPS_INTERVAL,
-  UNOWN_LIGHT_SCREEN_NB_SHOPS_INTERVAL,
-  UNOWN_RATE_AMNESIA,
+  SKY_MELODICA_CHANCE,
+  TERRA_CYMBAL_CHANCE,
+  UNOWN_PSY3_NB_SHOPS_INTERVAL,
+  UNOWN_PSY5_NB_SHOPS_INTERVAL,
+  UNOWN_PSY7_NB_SHOPS_INTERVAL,
   UniquePool
 } from "../config"
 import { pickFirstPartners } from "../core/scribbles"
@@ -64,8 +71,9 @@ import {
   randomWeighted,
   shuffleArray
 } from "../utils/random"
-import { values } from "../utils/schemas"
+import { schemaValues } from "../utils/schemas"
 import Player from "./colyseus-models/player"
+import { PlayerChoice, PlayerChoiceType } from "./colyseus-models/player-choice"
 import { Pokemon, PokemonClasses } from "./colyseus-models/pokemon"
 import { getWildChance } from "./colyseus-models/synergies"
 import { getPokemonBaseline } from "./pokemon-factory"
@@ -334,16 +342,15 @@ export default class Shop {
   assignShop(player: Player, manualRefresh: boolean, state: GameState) {
     player.shop.forEach((pkm) => this.releasePokemon(pkm, player, state))
 
-    const hasEerieSpell = player.effects.has(EffectEnum.EERIE_SPELL)
-    if (hasEerieSpell) {
+    const hasTranscendence = player.effects.has(EffectEnum.TRANSCENDENCE)
+    if (hasTranscendence) {
       player.shopsSinceLastUnownShop += 1
     }
     const shouldBeUnownShop =
-      hasEerieSpell &&
+      hasTranscendence &&
       ((!manualRefresh && !player.shopLocked) ||
         (manualRefresh &&
-          player.shopsSinceLastUnownShop ===
-            UNOWN_EERIE_SPELL_NB_SHOPS_INTERVAL))
+          player.shopsSinceLastUnownShop === UNOWN_PSY7_NB_SHOPS_INTERVAL))
 
     if (shouldBeUnownShop) {
       // Unown shop
@@ -371,12 +378,22 @@ export default class Shop {
     portalSynergies: Synergy[]
   ) {
     const stageLevel = state.stageLevel
-    let allCandidates =
-      {
-        [PortalCarouselStages[0]]: [...this.commonPool],
-        [PortalCarouselStages[1]]: [...UniquePool],
-        [PortalCarouselStages[2]]: [...LegendaryPool]
-      }[stageLevel] ?? []
+    const typeByStage: { [stage: number]: PlayerChoiceType } = {
+      [PortalCarouselStages[0]]: "starter",
+      [PortalCarouselStages[1]]: "unique",
+      [PortalCarouselStages[2]]: "legendary"
+    }
+    const type = typeByStage[stageLevel]
+
+    const poolByType: {
+      [type in "starter" | "unique" | "legendary"]: PkmProposition[]
+    } = {
+      starter: [...this.commonPool],
+      unique: [...UniquePool],
+      legendary: [...LegendaryPool]
+    }
+
+    let allCandidates: PkmProposition[] = poolByType[type] || []
 
     if (stageLevel === 0) {
       if (state.specialGameRule === SpecialGameRule.UNIQUE_STARTER) {
@@ -395,6 +412,8 @@ export default class Shop {
       stageLevel === PortalCarouselStages[0]
         ? NB_STARTERS
         : NB_UNIQUE_PROPOSITIONS
+    const pokemonsProposed: PkmProposition[] = []
+    const itemsProposed: Item[] = []
 
     for (let i = 0; i < nbPropositions; i++) {
       let synergyWanted: Synergy | undefined = portalSynergies[i]
@@ -418,7 +437,7 @@ export default class Shop {
         }
 
         if (
-          player.pokemonsProposition.some((prop) => {
+          pokemonsProposed.some((prop) => {
             const p: Pkm = prop in PkmDuos ? PkmDuos[prop][0] : prop
             return PkmFamily[p] === PkmFamily[pkm] || isRegionalVariant(p, pkm)
           })
@@ -466,39 +485,47 @@ export default class Shop {
       }
 
       if (stageLevel === PortalCarouselStages[0]) {
-        player.itemsProposition[i] = pickRandomIn(
+        itemsProposed[i] = pickRandomIn(
           ItemComponentsNoFossilOrScarf.filter(
-            (c) => player.itemsProposition.includes(c) === false
+            (c) => itemsProposed.includes(c) === false
           )
         )
       }
 
       if (
         stageLevel === PortalCarouselStages[0] &&
-        player.pokemonsProposition.includes(Pkm.EEVEE) === false &&
+        pokemonsProposed.includes(Pkm.EEVEE) === false &&
         (chance(EEVEE_RATE) || initialCandidatesEmpty) &&
         state.specialGameRule !== SpecialGameRule.FIRST_PARTNER &&
         state.specialGameRule !== SpecialGameRule.UNIQUE_STARTER
       ) {
         selected = Pkm.EEVEE
-        player.itemsProposition[i] = Item.FOSSIL_STONE
+        itemsProposed[i] = Item.FOSSIL_STONE
       } else if (
         stageLevel === PortalCarouselStages[1] &&
-        player.pokemonsProposition.includes(Pkm.KECLEON) === false &&
+        pokemonsProposed.includes(Pkm.KECLEON) === false &&
         chance(KECLEON_RATE)
       ) {
         selected = Pkm.KECLEON
       } else if (
         stageLevel === PortalCarouselStages[2] &&
-        player.pokemonsProposition.includes(Pkm.ARCEUS) === false &&
+        pokemonsProposed.includes(Pkm.ARCEUS) === false &&
         chance(ARCEUS_RATE)
       ) {
         selected = Pkm.ARCEUS
       }
 
       removeInArray(allCandidates, selected)
-      player.pokemonsProposition.push(selected)
+      pokemonsProposed.push(selected)
     }
+
+    player.choices.push(
+      new PlayerChoice({
+        type,
+        pokemons: pokemonsProposed,
+        items: itemsProposed
+      })
+    )
   }
 
   getRandomPokemonFromPool(
@@ -578,17 +605,17 @@ export default class Shop {
       return player.items.includes(Item.MYSTERY_BOX) ? Pkm.MELTAN : Pkm.DITTO
     }
 
-    if (
-      shopIndex === 5 &&
-      !noSpecial &&
-      ((player.effects.has(EffectEnum.LIGHT_SCREEN) &&
-        (player.rerollCount + state.stageLevel) %
-          UNOWN_LIGHT_SCREEN_NB_SHOPS_INTERVAL ===
-          0) ||
-        (player.effects.has(EffectEnum.AMNESIA) && chance(UNOWN_RATE_AMNESIA)))
-    ) {
-      const unowns = getUnownsPoolPerStage(state.stageLevel)
-      return pickRandomIn(unowns)
+    if (shopIndex === 5 && !noSpecial) {
+      const totalRerolls = player.gameStats.rerollCount + state.stageLevel
+      if (
+        (player.effects.has(EffectEnum.PRECOGNITION) &&
+          totalRerolls % UNOWN_PSY3_NB_SHOPS_INTERVAL === 0) ||
+        (player.effects.has(EffectEnum.AURA) &&
+          totalRerolls % UNOWN_PSY5_NB_SHOPS_INTERVAL === 0)
+      ) {
+        const unowns = getUnownsPoolPerStage(state.stageLevel)
+        return pickRandomIn(unowns)
+      }
     }
 
     if (
@@ -602,7 +629,7 @@ export default class Shop {
     const finals = player.getFinalizedLines()
     let specificTypesWanted: Synergy[] | undefined = undefined
 
-    const attractors = values(player.board).filter(
+    const attractors = schemaValues(player.board).filter(
       (p) => p.items.has(Item.INCENSE) || p.dishes.has(Item.HONEY)
     )
     let attractor: Pokemon | null = null
@@ -612,9 +639,44 @@ export default class Shop {
     }
 
     if (attractor) {
-      specificTypesWanted = values(attractor.types)
+      specificTypesWanted = schemaValues(attractor.types)
     } else if (wildChance > 0 && chance(wildChance)) {
       specificTypesWanted = [Synergy.WILD]
+    } else if (
+      player.items.includes(Item.AQUA_MONICA) &&
+      chance(AQUA_MONICA_CHANCE)
+    ) {
+      specificTypesWanted = [Synergy.WATER]
+    } else if (
+      player.items.includes(Item.FIERY_DRUM) &&
+      chance(FIERY_DRUM_CHANCE)
+    ) {
+      specificTypesWanted = [Synergy.FIRE]
+    } else if (
+      player.items.includes(Item.GRASS_CORNET) &&
+      chance(GRASS_CORNET_CHANCE)
+    ) {
+      specificTypesWanted = [Synergy.GRASS]
+    } else if (
+      player.items.includes(Item.ICY_FLUTE) &&
+      chance(ICY_FLUTE_CHANCE)
+    ) {
+      specificTypesWanted = [Synergy.ICE]
+    } else if (
+      player.items.includes(Item.ROCK_HORN) &&
+      chance(ROCK_HORN_CHANCE)
+    ) {
+      specificTypesWanted = [Synergy.ROCK]
+    } else if (
+      player.items.includes(Item.SKY_MELODICA) &&
+      chance(SKY_MELODICA_CHANCE)
+    ) {
+      specificTypesWanted = [Synergy.FLYING]
+    } else if (
+      player.items.includes(Item.TERRA_CYMBAL) &&
+      chance(TERRA_CYMBAL_CHANCE)
+    ) {
+      specificTypesWanted = [Synergy.GROUND]
     }
 
     const probas = RarityProbabilityPerLevel[player.experienceManager.level]
@@ -650,10 +712,10 @@ export default class Shop {
       return Pkm.MAGIKARP
     }
 
-    const repeatBallHolders = values(player.board).filter((p) =>
+    const repeatBallHolders = schemaValues(player.board).filter((p) =>
       p.items.has(Item.REPEAT_BALL)
     )
-    const totalRerolls = player.rerollCount + state.stageLevel
+    const totalRerolls = player.gameStats.rerollCount + state.stageLevel
 
     if (
       repeatBallHolders.length > 0 &&
@@ -710,7 +772,7 @@ export default class Shop {
   }
 
   pickFish(player: Player, rod: FishingRod, state: GameState): Pkm {
-    const mantine = values(player.board).find(
+    const mantine = schemaValues(player.board).find(
       (p) => p.name === Pkm.MANTYKE || p.name === Pkm.MANTINE
     )
 

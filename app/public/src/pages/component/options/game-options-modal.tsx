@@ -1,6 +1,9 @@
-import React, { Dispatch, SetStateAction } from "react"
+import Phaser from "phaser"
+import { Dispatch, SetStateAction } from "react"
 import { useTranslation } from "react-i18next"
 import { Tab, TabList, TabPanel, Tabs } from "react-tabs"
+import { isThemeUnlocked, THEMES } from "../../../../../config"
+import { GADGETS } from "../../../../../config/game/gadgets"
 import { Language } from "../../../../../types/enum/Language"
 import { LanguageNames } from "../../../../dist/client/locales"
 import { useAppDispatch, useAppSelector } from "../../../hooks"
@@ -25,6 +28,8 @@ export default function GameOptionsModal(props: {
   const language = useAppSelector(
     (state) => state.network.profile?.language ?? i18n.language
   )
+  const profile = useAppSelector((state) => state.network.profile)
+  const profileLevel = profile?.level ?? 0
 
   const renderers = {
     [Phaser.AUTO]: "Auto",
@@ -36,20 +41,20 @@ export default function GameOptionsModal(props: {
     <Modal
       show={props.show}
       onClose={props.hideModal}
-      header={t("options")}
+      header={t("options.title")}
       className="game-options-modal anchor-top"
     >
       <Tabs>
         <TabList>
-          <Tab key="sound">{t("sound")}</Tab>
-          <Tab key="interface">{t("interface")}</Tab>
-          <Tab key="hotkeys">{t("hotkeys")}</Tab>
-          <Tab key="files">{t("game_files")}</Tab>
+          <Tab key="sound">{t("options.sound")}</Tab>
+          <Tab key="interface">{t("options.interface")}</Tab>
+          <Tab key="hotkeys">{t("options.hotkeys")}</Tab>
+          <Tab key="files">{t("options.game_files")}</Tab>
         </TabList>
 
         <TabPanel>
           <label style={{ width: "100%" }}>
-            {t("music_volume")}: {preferences.musicVolume} %
+            {t("jukebox.music_volume")}: {preferences.musicVolume} %
             <input
               type="range"
               min="0"
@@ -65,7 +70,7 @@ export default function GameOptionsModal(props: {
             ></input>
           </label>
           <label style={{ width: "100%" }}>
-            {t("sfx_volume")}: {preferences.sfxVolume} %
+            {t("options.sfx_volume")}: {preferences.sfxVolume} %
             <input
               type="range"
               min="0"
@@ -87,7 +92,7 @@ export default function GameOptionsModal(props: {
               onToggle={(checked) =>
                 setPreferences({ playInBackground: checked })
               }
-              label={t("play_music_in_background")}
+              label={t("options.play_music_in_background")}
             />
           </p>
         </TabPanel>
@@ -96,7 +101,7 @@ export default function GameOptionsModal(props: {
           {props.page === "main_lobby" && (
             <>
               <label>
-                {t("language")}:&nbsp;
+                {t("options.language")}:&nbsp;
                 <select
                   className="is-light"
                   value={language}
@@ -113,15 +118,36 @@ export default function GameOptionsModal(props: {
                 </select>
               </label>
               <p className="info">
-                {t("community_translations")}{" "}
+                {t("options.community_translations")}{" "}
                 <a
-                  href="https://discord.com/channels/737230355039387749/1134014553529790464"
+                  href="https://discord.com/channels/737230355039387749/1488242758232834282"
                   target="_blank"
                 >
                   Discord
                 </a>
               </p>
             </>
+          )}
+
+          {profile && profileLevel >= GADGETS.palette.levelRequired && (
+            <p>
+              <label>
+                {t("options.theme")}:&nbsp;
+                <select
+                  className="is-light"
+                  value={preferences.theme}
+                  onChange={(e) => setPreferences({ theme: e.target.value })}
+                >
+                  {THEMES.filter((theme) =>
+                    isThemeUnlocked(theme, profile)
+                  ).map((theme) => (
+                    <option key={theme} value={theme}>
+                      {t(`theme.${theme}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </p>
           )}
 
           <p>
@@ -131,7 +157,7 @@ export default function GameOptionsModal(props: {
               onToggle={(checked) =>
                 setPreferences({ showDetailsOnHover: checked })
               }
-              label={t("show_details_on_hover")}
+              label={t("options.show_details_on_hover")}
             />
           </p>
           <p>
@@ -141,7 +167,7 @@ export default function GameOptionsModal(props: {
               onToggle={(checked) =>
                 setPreferences({ showDamageNumbers: checked })
               }
-              label={t("show_damage_numbers")}
+              label={t("options.show_damage_numbers")}
             />
           </p>
           <p>
@@ -157,7 +183,7 @@ export default function GameOptionsModal(props: {
                   else animatedTiles.resume()
                 }
               }}
-              label={t("disable_animated_tilemap")}
+              label={t("options.disable_animated_tilemap")}
             />
           </p>
           <p>
@@ -167,7 +193,7 @@ export default function GameOptionsModal(props: {
               onToggle={(checked) => {
                 setPreferences({ disableCameraShake: checked })
               }}
-              label={t("disable_camera_shake")}
+              label={t("options.disable_camera_shake")}
             />
           </p>
           <p>
@@ -175,7 +201,7 @@ export default function GameOptionsModal(props: {
               isDark
               checked={preferences.antialiasing}
               onToggle={(checked) => setPreferences({ antialiasing: checked })}
-              label={t("antialiasing")}
+              label={t("options.antialiasing")}
             />
           </p>
           <p>
@@ -185,13 +211,13 @@ export default function GameOptionsModal(props: {
               onToggle={(checked) =>
                 setPreferences({ colorblindMode: checked })
               }
-              label={t("colorblind_mode")}
+              label={t("options.colorblind_mode")}
             />
           </p>
           {props.page === "main_lobby" && (
-            <>
+            <div>
               <label>
-                {t("renderer")}:&nbsp;
+                {t("options.renderer")}:&nbsp;
                 <select
                   className="is-light"
                   value={preferences.renderer}
@@ -208,9 +234,9 @@ export default function GameOptionsModal(props: {
                     </option>
                   ))}
                 </select>
-                <p className="info">{t("renderer_info")}</p>
+                <p className="info">{t("options.renderer_info")}</p>
               </label>
-            </>
+            </div>
           )}
         </TabPanel>
 

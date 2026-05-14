@@ -1,5 +1,6 @@
 import { MapSchema } from "@colyseus/schema"
 import { t } from "i18next"
+import Phaser from "phaser"
 import { TownEncounterSellPrice } from "../../../../config"
 import GameState from "../../../../rooms/states/game-state"
 import {
@@ -18,6 +19,7 @@ import {
   TownEncounters
 } from "../../../../types/enum/TownEncounter"
 import { ILeaderboardInfo } from "../../../../types/interfaces/LeaderboardInfo"
+import { NpcDialog } from "../../../../types/strings/NpcDialog"
 import { getRankLabel } from "../../../../types/strings/Strings"
 import { getPokemonCustomFromAvatar } from "../../../../utils/avatar"
 import { logger } from "../../../../utils/logger"
@@ -71,7 +73,7 @@ export default class MinigameManager {
 
     this.scene.room?.onMessage(
       Transfer.NPC_DIALOG,
-      (message: { npc: Pkm; dialog: string }) => this.onNpcDialog(message)
+      (message: { npc: Pkm; dialog: NpcDialog }) => this.onNpcDialog(message)
     )
   }
 
@@ -545,6 +547,15 @@ export default class MinigameManager {
       name: Pkm.CINCCINO
     })
 
+    const ludicolo = new PokemonSpecial({
+      scene: this.scene,
+      x: encounter === TownEncounters.LUDICOLO ? cx : 13.5 * 48,
+      y: encounter === TownEncounters.LUDICOLO ? cy : 25.5 * 48,
+      orientation: Orientation.DOWN,
+      name: Pkm.LUDICOLO,
+      animation: PokemonActionState.ABILITY
+    })
+
     const magnezone = new PokemonSpecial({
       scene: this.scene,
       x: encounter === TownEncounters.MAGNEZONE ? cx : 41 * 48,
@@ -554,10 +565,27 @@ export default class MinigameManager {
 
     const kingambit = new PokemonSpecial({
       scene: this.scene,
-      x: encounter === TownEncounters.KINGAMBIT ? cx : 22 * 48,
-      y: encounter === TownEncounters.KINGAMBIT ? cy : 25 * 48,
+      x: encounter === TownEncounters.KINGAMBIT ? cx : 44.5 * 48,
+      y: encounter === TownEncounters.KINGAMBIT ? cy : 5 * 48,
       name: Pkm.KINGAMBIT
     })
+
+    const lapras = new PokemonSpecial({
+      scene: this.scene,
+      x: encounter === TownEncounters.LAPRAS ? cx : 0 * 48,
+      y: encounter === TownEncounters.LAPRAS ? cy : 3.75 * 48,
+      name: Pkm.LAPRAS,
+      animation: PokemonActionState.WALK,
+      orientation:
+        encounter === TownEncounters.LAPRAS
+          ? Orientation.DOWN
+          : Orientation.RIGHT
+    })
+
+    if (encounter !== TownEncounters.LAPRAS) {
+      lapras.moveManager.setSpeed(15)
+      lapras.moveManager.moveTo(8 * 48, 4 * 48)
+    }
 
     const podiumPokemons = podium.map((p, rank) => {
       const { name, shiny } = getPokemonCustomFromAvatar(p.avatar)
@@ -598,8 +626,10 @@ export default class MinigameManager {
       croagunk,
       wigglytuff,
       cincinno,
+      ludicolo,
       magnezone,
       kingambit,
+      lapras,
       ...podiumPokemons
     )
 
@@ -642,14 +672,14 @@ export default class MinigameManager {
     }
   }
 
-  onNpcDialog({ npc, dialog, ...otherArgs }: { npc: Pkm; dialog: string }) {
+  onNpcDialog({ npc, dialog, ...otherArgs }: { npc: Pkm; dialog: NpcDialog }) {
     const villager = this.villagers.find((pkm) => pkm.name === npc)
     if (villager) {
       if (dialog) {
         this.scene.board?.displayText(
           villager.x,
           villager.y - 10,
-          t(dialog, otherArgs),
+          t(`npc_dialog.${dialog}`, otherArgs),
           true
         )
       } else {

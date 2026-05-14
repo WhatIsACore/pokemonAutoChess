@@ -87,6 +87,23 @@ export class OnStageStartEffect extends Effect {
   apply(args: OnStageStartEffectArgs) {}
 }
 
+// applied when a pokemon is benched during a fight
+interface OnBenchedDuringFightEffectArgs {
+  pokemon: Pokemon
+  player: Player
+  simulation: Simulation
+}
+
+export class OnBenchedDuringFightEffect extends Effect {
+  constructor(
+    effect?: (args: OnBenchedDuringFightEffectArgs) => void,
+    origin?: EffectOrigin
+  ) {
+    super(effect, origin)
+  }
+  apply(args: OnBenchedDuringFightEffectArgs) {}
+}
+
 interface OnSimulationStartEffectArgs {
   simulation: Simulation
   player: Player
@@ -230,6 +247,16 @@ interface OnAttackEffectArgs {
   hasAttackKilled?: boolean
 }
 
+export class BeforeAttackEffect extends Effect {
+  override apply(args: OnAttackEffectArgs) {}
+  constructor(
+    effect?: (args: OnAttackEffectArgs) => void,
+    origin?: EffectOrigin
+  ) {
+    super(effect, origin)
+  }
+}
+
 export class OnAttackEffect extends Effect {
   override apply(args: OnAttackEffectArgs) {}
   constructor(
@@ -245,14 +272,14 @@ export class OnAbilityCastEffect extends Effect {
   apply(
     pokemon: PokemonEntity,
     board: Board,
-    target: PokemonEntity,
+    target: PokemonEntity | null,
     crit: boolean
   ) {}
   constructor(
     effect?: (
       pokemon: PokemonEntity,
       board: Board,
-      target: PokemonEntity,
+      target: PokemonEntity | null,
       crit: boolean
     ) => void,
     origin?: EffectOrigin

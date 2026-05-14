@@ -1,6 +1,5 @@
 import { t } from "i18next"
-import { GameObjects } from "phaser"
-import AnimatedTiles from "phaser-animated-tiles-phaser3.5/dist/AnimatedTiles.min.js"
+import Phaser, { GameObjects } from "phaser"
 import pkg from "../../../../../package.json"
 import { RegionDetails } from "../../../../config"
 import type Player from "../../../../models/colyseus-models/player"
@@ -8,9 +7,10 @@ import { getPkmWithCustom } from "../../../../models/colyseus-models/pokemon-cus
 import { DungeonMusic, DungeonPMDO } from "../../../../types/enum/Dungeon"
 import { PkmIndex } from "../../../../types/enum/Pokemon"
 import { getPortraitSrc } from "../../../../utils/avatar"
-import { values } from "../../../../utils/schemas"
+import { schemaValues } from "../../../../utils/schemas"
 import atlas from "../../assets/atlas.json"
 import { preloadMusic } from "../../pages/utils/audio"
+import AnimatedTilesPlugin from "../plugins/animated-tiles-plugin"
 import GameScene from "../scenes/game-scene"
 import { loadCompressedAtlas } from "./pokemon"
 
@@ -43,6 +43,7 @@ export default class LoadingManager {
     preloadMusic(scene, DungeonMusic.TREASURE_TOWN_STAGE_0)
     preloadMusic(scene, DungeonMusic.TREASURE_TOWN_STAGE_10)
     preloadMusic(scene, DungeonMusic.TREASURE_TOWN_STAGE_20)
+    preloadMusic(scene, DungeonMusic.CARNIVAL_LUDICOLO)
 
     scene.load.image("rain", "/assets/environment/rain.png")
     scene.load.image("sand", "/assets/environment/sand.png")
@@ -86,7 +87,7 @@ export default class LoadingManager {
     for (const pack in atlas.packs) {
       scene.load.multiatlas(
         atlas.packs[pack].name,
-        `/assets/${pack}/${atlas.packs[pack].name}-${pkg.version}.json`,
+        `/assets/${pack}/${atlas.packs[pack].name}.json?v=${pkg.assetsVersion}`,
         `/assets/${pack}/`
       )
     }
@@ -94,7 +95,7 @@ export default class LoadingManager {
     loadEnvironmentMultiAtlas(this.scene)
 
     if (scene instanceof GameScene) {
-      const players = values(scene.room?.state.players!)
+      const players = schemaValues(scene.room?.state.players!)
       const player = players.find((p) => p.id === scene.uid) ?? players[0]
       await scene.preloadMaps(
         players
@@ -110,7 +111,7 @@ export default class LoadingManager {
 
     scene.load.scenePlugin(
       "animatedTiles",
-      AnimatedTiles,
+      AnimatedTilesPlugin,
       "animatedTiles",
       "animatedTiles"
     )
@@ -151,6 +152,11 @@ export function loadEnvironmentMultiAtlas(scene: Phaser.Scene) {
   scene.load.multiatlas(
     "loading_pokeball",
     "/assets/environment/loading_pokeball.json",
+    "/assets/environment/"
+  )
+  scene.load.multiatlas(
+    "training_bag",
+    "/assets/environment/training_bag.json",
     "/assets/environment/"
   )
 }

@@ -1,5 +1,5 @@
 import { RoomAvailable } from "@colyseus/sdk"
-import React, { useState } from "react"
+import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { EloRankThreshold, MAX_PLAYERS_PER_GAME } from "../../../../../config"
 import { IPreparationMetadata, Role } from "../../../../../types"
@@ -111,7 +111,7 @@ export default function RoomItem(props: {
           title={
             t("minimum_rank") +
             ": " +
-            t("elorank." + props.room.metadata?.minRank)
+            t(`elorank.${props.room.metadata?.minRank}`)
           }
           className="rank icon"
           src={"/assets/ranks/" + props.room.metadata?.minRank + ".svg"}

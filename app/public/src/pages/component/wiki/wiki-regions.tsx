@@ -15,7 +15,7 @@ import SynergyIcon from "../icons/synergy-icon"
 import PokemonPortrait from "../pokemon-portrait"
 import { PokemonTypeahead } from "../typeahead/pokemon-typeahead"
 
-const MIN_COL_WIDTH = 320
+const MIN_COL_WIDTH = 360
 const ROW_HEIGHT = 340
 
 export default function WikiRegions() {
@@ -89,8 +89,8 @@ export default function WikiRegions() {
         />
       </div>
       <div className="my-box" style={{ marginBottom: "0.5em" }}>
-        <p>{t("region_hint1")}</p>
-        <p>{t("region_hint2")}</p>
+        <p>{t("wiki.regions.region_hint1")}</p>
+        <p>{t("wiki.regions.region_hint2")}</p>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
         <AutoSizer
@@ -109,8 +109,7 @@ export default function WikiRegions() {
                 rowProps={{
                   regions: sortedRegions,
                   columnCount,
-                  pokemonsPerRegion,
-                  t
+                  pokemonsPerRegion
                 }}
               />
             )
@@ -126,7 +125,6 @@ type RegionRowData = {
   regions: DungeonPMDO[]
   columnCount: number
   pokemonsPerRegion: { [key in DungeonPMDO]?: Pkm[] }
-  t: (key: string) => string
 }
 
 function RegionRow({
@@ -134,8 +132,7 @@ function RegionRow({
   style,
   regions,
   columnCount,
-  pokemonsPerRegion,
-  t
+  pokemonsPerRegion
 }: {
   ariaAttributes: object
   index: number
@@ -143,6 +140,7 @@ function RegionRow({
 } & RegionRowData): React.ReactElement | null {
   const startIdx = index * columnCount
   const rowRegions = regions.slice(startIdx, startIdx + columnCount)
+  const { t } = useTranslation()
 
   return (
     <div style={{ ...style, paddingBottom: "0.5em" }}>

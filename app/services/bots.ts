@@ -1,8 +1,9 @@
 import { logger } from "colyseus"
 import { mongo } from "mongoose"
-import { nanoid } from "nanoid"
-import { BotV2, IBot, IStep } from "../models/mongo-models/bot-v2"
+import { BotV2 } from "../models/mongo-models/bot-v2"
+import { Pkm } from "../types/enum/Pokemon"
 import { IUserMetadataMongo } from "../types/interfaces/UserMetadata"
+import type { IBot, IStep } from "../types/models/bot-v2"
 import { discordService } from "./discord"
 
 export type IBotListItem = Omit<IBot, "steps">
@@ -35,7 +36,7 @@ export async function fetchBotsList(
         queryFilter, // Apply filter in the database query
         { steps: 0 }, // Exclude the 'steps' field
         { sort: { elo: -1, id: 1 }, limit: pageSize, skip: page * pageSize } // Add secondary sort by id for stable pagination
-      )
+      ).lean()
 
       if (!botsData || botsData.length === 0) {
         hasMoreData = false
@@ -86,7 +87,7 @@ export async function fetchBot(id: string): Promise<IBot | null> {
 }
 
 export async function addBotToDatabase(bot: {
-  name: string
+  name: Pkm
   avatar: string
   elo: number
   author: string
@@ -104,7 +105,7 @@ export async function addBotToDatabase(bot: {
     elo: bot.elo ?? 1200,
     author: bot.author,
     steps: bot.steps,
-    id: nanoid()
+    id: crypto.randomUUID()
   })
 
   logger.info(`Bot with id ${resultCreate.id} created`)

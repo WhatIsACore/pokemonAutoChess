@@ -1,11 +1,11 @@
-import { FIGHTING_PHASE_DURATION } from "../config"
+import { FIGHTING_PHASE_DURATION, getBaseAltForm } from "../config"
 import { Title } from "../types"
 import { EffectEnum } from "../types/enum/Effect"
 import { Berries, Dishes, Item } from "../types/enum/Item"
 import { Pkm } from "../types/enum/Pokemon"
 import { Synergy } from "../types/enum/Synergy"
 import { chance } from "../utils/random"
-import { values } from "../utils/schemas"
+import { schemaValues } from "../utils/schemas"
 import { AbilityStrategies } from "./abilities/abilities"
 import {
   Effect,
@@ -15,7 +15,7 @@ import {
   PeriodicEffect
 } from "./effects/effect"
 
-export const DishByPkm: { [pkm in Pkm]?: Item } = {
+export const DishByPkm: { [pkm in Pkm]?: Item | null } = {
   [Pkm.LICKITUNG]: Item.RAGE_CANDY_BAR,
   [Pkm.LICKILICKY]: Item.RAGE_CANDY_BAR,
   [Pkm.SINISTEA]: Item.TEA,
@@ -35,7 +35,7 @@ export const DishByPkm: { [pkm in Pkm]?: Item } = {
   [Pkm.CHERUBI]: Item.HERBA_MYSTICA,
   [Pkm.CHERRIM]: Item.HERBA_MYSTICA,
   [Pkm.CHERRIM_SUNLIGHT]: Item.HERBA_MYSTICA,
-  [Pkm.TROPIUS]: Item.BERRIES,
+  [Pkm.TROPIUS]: Item.NANAB_BERRY,
   [Pkm.SHUCKLE]: Item.BERRY_JUICE,
   [Pkm.COMBEE]: Item.HONEY,
   [Pkm.VESPIQUEEN]: Item.HONEY,
@@ -75,12 +75,18 @@ export const DishByPkm: { [pkm in Pkm]?: Item } = {
   [Pkm.DEERLING_SUMMER]: Item.TEA,
   [Pkm.SAWSBUCK_SUMMER]: Item.TEA,
   [Pkm.LECHONK]: Item.MUSHROOMS,
-  [Pkm.OINKOLOGNE_MALE]: Item.MUSHROOMS
+  [Pkm.OINKOLOGNE_MALE]: Item.MUSHROOMS,
   //[Pkm.OINKOLOGNE_FEMALE]: Item.MUSHROOMS
+  [Pkm.DONDOZO]: Item.RICE,
+  [Pkm.TATSUGIRI_CURLY]: null,
+  [Pkm.TATSUGIRI_DROOPY]: null,
+  [Pkm.TATSUGIRI_STRETCHY]: null,
+  [Pkm.GUZZLORD]: null,
+  [Pkm.SKWOVET]: Item.BERRIES,
+  [Pkm.GREEDENT]: Item.BERRIES
 }
 
 export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
-  BERRIES: [],
   BERRY_JUICE: [
     new OnSpawnEffect((entity) => {
       entity.addShield(100, entity, 0, false)
@@ -95,7 +101,7 @@ export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
   BALM_MUSHROOM: [
     new OnSpawnEffect((entity) => {
       entity.status.triggerRuneProtect(30000, entity, entity)
-      entity.addSpeed(40, entity, 0, false)
+      entity.addSpeed(30, entity, 0, false)
       entity.effects.add(EffectEnum.BALM_MUSHROOM)
       entity.effectsSet.add(
         new PeriodicEffect(
@@ -108,6 +114,7 @@ export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
       )
     })
   ],
+  BERRIES: [],
   BINDING_MOCHI: [
     new OnSpawnEffect((entity) => {
       entity.effects.add(EffectEnum.BINDING_MOCHI)
@@ -142,7 +149,7 @@ export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
     }),
     new OnHitEffect(({ attacker, target }) => {
       if (attacker.effects.has(EffectEnum.CASTELIACONE)) {
-        target.status.triggerFreeze(5000, target)
+        target.status.triggerFreeze(5000, target, attacker)
         attacker.effects.delete(EffectEnum.CASTELIACONE)
       }
     })
@@ -168,22 +175,22 @@ export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
   HERBA_MYSTICA: [],
   HERBA_MYSTICA_SWEET: [
     new OnSpawnEffect((entity) => {
-      entity.status.fairyField = true
+      entity.status.addFairyField(entity)
     })
   ],
   HERBA_MYSTICA_SPICY: [
     new OnSpawnEffect((entity) => {
-      entity.status.psychicField = true
+      entity.status.addPsychicField(entity)
     })
   ],
   HERBA_MYSTICA_SOUR: [
     new OnSpawnEffect((entity) => {
-      entity.status.electricField = true
+      entity.status.addElectricField(entity)
     })
   ],
   HERBA_MYSTICA_BITTER: [
     new OnSpawnEffect((entity) => {
-      entity.status.grassField = true
+      entity.status.addGrassField(entity)
     })
   ],
   HERBA_MYSTICA_SALTY: [
@@ -243,10 +250,10 @@ export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
         entity.player.titles.add(Title.POFFIN_MASTER)
       }
 
-      values(entity.items)
+      schemaValues(entity.items)
         .filter((item) => Berries.includes(item))
         .forEach((item) => {
-          entity.eatBerry(item, undefined, true)
+          entity.eatBerry(item, undefined, true, 0, false)
         })
     })
   ],
@@ -377,8 +384,8 @@ export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
   ],
   TINY_MUSHROOM: [
     new OnSpawnEffect((entity) => {
-      entity.addMaxHP(-0.2 * entity.baseHP, entity, 0, false)
-      entity.addSpeed(40, entity, 0, false)
+      entity.addMaxHP(-0.3 * entity.baseHP, entity, 0, false)
+      entity.addSpeed(30, entity, 0, false)
     })
   ],
   WHIPPED_DREAM: [
@@ -426,6 +433,21 @@ export const DishEffects: Record<(typeof Dishes)[number], Effect[]> = {
   RIBBON_SWEET: [
     new OnDishConsumedEffect(({ pokemon, entity, player }) => {
       entity?.addSpecialDefense(3, entity, 0, false, true)
+    })
+  ],
+  RICE: [
+    new OnDishConsumedEffect(({ pokemon, entity, player }) => {
+      entity?.addShield(50, entity, 0, false)
+      const tatsugiriOnBoard = schemaValues(player.board).find(
+        (e) => e && getBaseAltForm(e.name) === Pkm.TATSUGIRI_CURLY
+      )
+      if (tatsugiriOnBoard?.name === Pkm.TATSUGIRI_CURLY) {
+        entity?.addAttack(8, entity, 0, false)
+      } else if (tatsugiriOnBoard?.name === Pkm.TATSUGIRI_DROOPY) {
+        entity?.addDefense(8, entity, 0, false)
+      } else if (tatsugiriOnBoard?.name === Pkm.TATSUGIRI_STRETCHY) {
+        entity?.addSpeed(25, entity, 0, false)
+      }
     })
   ]
 }

@@ -2,9 +2,13 @@ import { getStateCallbacks, Room } from "@colyseus/sdk"
 import firebase from "firebase/compat/app"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router"
 import { toast } from "react-toastify"
-import { MinStageForGameToCount, RegionDetails } from "../../../config"
+import {
+  getCurrentGameEvent,
+  MinStageForGameToCount,
+  RegionDetails
+} from "../../../config"
 import { IPokemonRecord } from "../../../models/colyseus-models/game-record"
 import { Wanderer } from "../../../models/colyseus-models/wanderer"
 import { PVEStages } from "../../../models/pve-stages"
@@ -29,10 +33,13 @@ import { Item } from "../../../types/enum/Item"
 import { Passive } from "../../../types/enum/Passive"
 import { Pkm } from "../../../types/enum/Pokemon"
 import { Synergy } from "../../../types/enum/Synergy"
+import { GameEvent } from "../../../types/events"
 import type { NonFunctionPropNames } from "../../../types/HelperTypes"
+import { DisplayText } from "../../../types/strings/DisplayText"
+import { ErrorMessage } from "../../../types/strings/ErrorMessage"
 import { getAvatarString } from "../../../utils/avatar"
 import { logger } from "../../../utils/logger"
-import { values } from "../../../utils/schemas"
+import { schemaValues } from "../../../utils/schemas"
 import GameContainer from "../game/game-container"
 import GameScene from "../game/scenes/game-scene"
 import {
@@ -56,7 +63,6 @@ import {
   setEmotesUnlocked,
   setGameMode,
   setInterest,
-  setItemsProposition,
   setLife,
   setLoadingProgress,
   setMaxInterest,
@@ -64,7 +70,6 @@ import {
   setNoELO,
   setPhase,
   setPodium,
-  setPokemonProposition,
   setRoundTime,
   setShopFreeRolls,
   setShopLocked,
@@ -79,12 +84,12 @@ import {
   setConnectionStatus,
   setErrorAlertMessage
 } from "../stores/NetworkStore"
+import GameChoice from "./component/game/game-choice"
 import GameDpsMeter from "./component/game/game-dps-meter"
+import GameExpeditions from "./component/game/game-expeditions"
 import GameFinalRank from "./component/game/game-final-rank"
-import GameItemsProposition from "./component/game/game-items-proposition"
 import GameLoadingScreen from "./component/game/game-loading-screen"
 import GamePlayers from "./component/game/game-players"
-import GamePokemonsProposition from "./component/game/game-pokemons-proposition"
 import GameShop from "./component/game/game-shop"
 import GameSpectatePlayerInfo from "./component/game/game-spectate-player-info"
 import GameStageInfo from "./component/game/game-stage-info"
@@ -94,6 +99,7 @@ import { MainSidebar } from "./component/main-sidebar/main-sidebar"
 import { ConnectionStatusNotification } from "./component/system/connection-status-notification"
 import { playMusic, preloadMusic } from "./utils/audio"
 import { LocalStoreKeys, localStore } from "./utils/store"
+import { transformEntityCoordinates } from "./utils/utils"
 
 let gameContainer: GameContainer
 
@@ -108,7 +114,7 @@ export function getGameContainer(): GameContainer {
 }
 
 export function cyclePlayers(amt: number) {
-  const players = values(gameContainer.room?.state.players)
+  const players = schemaValues(gameContainer.room?.state.players)
   playerClick(
     players[
       (players.findIndex((p) => p === gameContainer.player) +
@@ -182,6 +188,8 @@ export default function Game() {
     useState<FinalRankVisibility>(FinalRankVisibility.HIDDEN)
   const container = useRef<HTMLDivElement>(null)
 
+  const currentGameEvent = getCurrentGameEvent()
+
   const MAX_ATTEMPS_RECONNECT = 3
 
   const connectToGame = useCallback(
@@ -202,16 +210,7 @@ export default function Game() {
         client
           .reconnect<GameState>(cachedReconnectionToken)
           .then((room: Room) => {
-            // store game token for 1 hour
-            localStore.set(
-              LocalStoreKeys.RECONNECTION_GAME,
-              {
-                reconnectionToken: room.reconnectionToken,
-                roomId: room.roomId
-              },
-              60 * 60
-            )
-            joinGame(room)
+            joinGame(room, 60 * 60) // once in game, reconnection token is valid for 1 hour
             connected.current = true
             connecting.current = false
             dispatch(setConnectionStatus(ConnectionStatus.CONNECTED))
@@ -264,9 +263,7 @@ export default function Game() {
           role: p.role,
           pokemons: new Array<IPokemonRecord>(),
           synergies: new Array<{ name: Synergy; value: number }>(),
-          moneyEarned: p.totalMoneyEarned,
-          playerDamageDealt: p.totalPlayerDamageDealt,
-          rerollCount: p.rerollCount
+          gameStats: p.gameStats
         }
 
         const allSynergies = new Array<{ name: Synergy; value: number }>()
@@ -358,7 +355,21 @@ export default function Game() {
     }
     // when pressing back button, properly leave game
     window.addEventListener("popstate", confirmLeave)
+
+    // pause video background for performance
+    const videoBg = document.getElementById(
+      "videobg"
+    ) as HTMLVideoElement | null
+    if (videoBg) {
+      videoBg.pause()
+      videoBg.style.display = "none"
+    }
+
     return () => {
+      if (videoBg) {
+        videoBg.play()
+        videoBg.style.display = "block"
+      }
       window.removeEventListener("popstate", confirmLeave)
     }
   }, [])
@@ -398,6 +409,11 @@ export default function Game() {
           await connectToGame()
         }
       })
+    }
+
+    if (rooms.game?.connection.isOpen) {
+      connected.current = true
+      dispatch(setConnectionStatus(ConnectionStatus.CONNECTED))
     }
 
     if (!connected.current) {
@@ -528,6 +544,16 @@ export default function Game() {
         }
       })
 
+      room.onMessage(Transfer.CLEAR_BOARD_EVENT, (event: IBoardEvent) => {
+        //logger.debug("Received CLEAR_BOARD_EVENT", event)
+        if (gameContainer.game) {
+          const g = getGameScene()
+          if (g?.battle?.simulation?.id === event.simulationId) {
+            g.battle.removeBoardEvent(event)
+          }
+        }
+      })
+
       room.onMessage(
         Transfer.CLEAR_BOARD,
         (event: { simulationId: string }) => {
@@ -551,6 +577,30 @@ export default function Game() {
 
       room.onMessage(Transfer.GAME_END, leave)
 
+      room.onMessage(Transfer.DRAG_DROP_CANCEL, (message) =>
+        gameContainer.handleDragDropCancel(message)
+      )
+
+      room.onMessage(
+        Transfer.DISPLAY_TEXT,
+        (message: { text: DisplayText; id: string; x: number; y: number }) => {
+          const g = getGameScene()
+          if (g?.battle?.simulation?.id === message.id && message.text) {
+            const coordinates = transformEntityCoordinates(
+              message.x,
+              message.y,
+              g?.battle?.flip
+            )
+            gameContainer.gameScene?.board?.displayText(
+              coordinates[0],
+              coordinates[1],
+              t(message.text).toUpperCase(),
+              true
+            )
+          }
+        }
+      )
+
       room.onDrop((code) => {
         if (code >= 1001 && code <= 1015) {
           // Between 1001 and 1015 - Abnormal socket shutdown
@@ -570,7 +620,9 @@ export default function Game() {
           CloseCodes.USER_BANNED
         ].includes(code)
         if (shouldGoToLobby) {
-          const errorMessage = CloseCodesMessages[code]
+          const errorMessage = CloseCodesMessages[code] as
+            | ErrorMessage
+            | undefined
           if (errorMessage) {
             dispatch(setErrorAlertMessage(t(`errors.${errorMessage}`)))
           }
@@ -627,7 +679,9 @@ export default function Game() {
       })
 
       $state.additionalPokemons.onChange(() => {
-        dispatch(setAdditionalPokemons(values(room.state.additionalPokemons)))
+        dispatch(
+          setAdditionalPokemons(schemaValues(room.state.additionalPokemons))
+        )
       })
 
       $state.simulations.onRemove(() => {
@@ -723,6 +777,15 @@ export default function Game() {
           })
           $player.listen("streak", (value) => {
             dispatch(setStreak(value))
+          })
+          $player.choices.onChange(() => {
+            dispatch(
+              changePlayer({
+                id: player.id,
+                field: "choices",
+                value: schemaValues(player.choices)
+              })
+            )
           })
         }
         $player.listen("life", (value, previousValue) => {
@@ -830,12 +893,12 @@ export default function Game() {
           "regionalPokemons",
           "streak",
           "title",
-          "rerollCount",
-          "totalMoneyEarned",
-          "totalPlayerDamageDealt",
           "eggChance",
           "goldenEggChance",
-          "cellBattery"
+          "cellBattery",
+          "gameStats",
+          "scarvesItems",
+          "fairyWands"
         ] satisfies NonFunctionPropNames<IPlayer>[]
 
         fields.forEach((field) => {
@@ -848,18 +911,6 @@ export default function Game() {
 
         $player.synergies.onChange(() => {
           dispatch(setSynergies({ id: player.id, value: player.synergies }))
-        })
-
-        $player.itemsProposition.onChange((value, index) => {
-          if (player.id == uid) {
-            dispatch(setItemsProposition(values(player.itemsProposition)))
-          }
-        })
-
-        $player.pokemonsProposition.onChange((value, index) => {
-          if (player.id == uid) {
-            dispatch(setPokemonProposition(values(player.pokemonsProposition)))
-          }
         })
 
         $player.groundHoles.onChange((value) => {
@@ -930,10 +981,10 @@ export default function Game() {
           <GameStageInfo />
           <GamePlayers click={(id: string) => playerClick(id)} />
           <GameSynergies />
-          <GameItemsProposition />
-          <GamePokemonsProposition />
+          <GameChoice />
           <GameDpsMeter />
           <GameToasts />
+          {currentGameEvent === GameEvent.EXPEDITIONS && <GameExpeditions />}
         </>
       ) : (
         <GameLoadingScreen connectError={connectError} />

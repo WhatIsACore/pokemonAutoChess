@@ -1,5 +1,5 @@
 import { Dispatcher } from "@colyseus/command"
-import { Client, CloseCode, Room } from "colyseus"
+import { Client, Room } from "colyseus"
 import admin from "firebase-admin"
 import AfterGamePlayer from "../models/colyseus-models/after-game-player"
 import UserMetadata from "../models/mongo-models/user-metadata"
@@ -39,9 +39,7 @@ export default class AfterGameRoom extends Room<{ state: AfterGameState }> {
           plyr.synergies,
           plyr.elo,
           plyr.games,
-          plyr.moneyEarned,
-          plyr.playerDamageDealt,
-          plyr.rerollCount
+          plyr.gameStats
         )
         this.state.players.set(player.id, player)
       })
@@ -76,8 +74,14 @@ export default class AfterGameRoom extends Room<{ state: AfterGameState }> {
   }
 
   async onDrop(client: Client, code: number) {
-    // allow disconnected client to reconnect into this room until 20 seconds
-    await this.allowReconnection(client, 20)
+    try {
+      // allow disconnected client to reconnect into this room until 20 seconds
+      await this.allowReconnection(client, 20)
+    } catch (e) {
+      /*if (client && client.auth && client.auth.displayName) {
+        logger.info(`${client.auth.displayName} left after game room`)
+      }*/
+    }
   }
 
   async onLeave(client: Client, code: number) {

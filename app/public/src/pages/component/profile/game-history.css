@@ -1,6 +1,7 @@
 .game-history-list {
   display: flex;
   flex-direction: column;
+  min-height: 320px;
 }
 
 .game-history-list h2 {
@@ -54,7 +55,7 @@
 
 .game-history .date {
   grid-area: date;
-  color: #ccc;
+  color: var(--color-fg-secondary);
   font-size: 0.8em;
   margin: 0;
 }

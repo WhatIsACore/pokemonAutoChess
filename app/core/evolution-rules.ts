@@ -1,4 +1,4 @@
-import { EvolutionTime } from "../config"
+import { EvolutionTime, GoldenEggItems } from "../config"
 import Player from "../models/colyseus-models/player"
 import { Pokemon } from "../models/colyseus-models/pokemon"
 import PokemonFactory from "../models/pokemon-factory"
@@ -6,14 +6,14 @@ import { IPlayer } from "../types"
 import { Ability } from "../types/enum/Ability"
 import { EffectEnum } from "../types/enum/Effect"
 import { PokemonActionState } from "../types/enum/Game"
-import { Item, ItemComponents, ShinyItems } from "../types/enum/Item"
+import { Item, ItemComponents } from "../types/enum/Item"
 import { Passive } from "../types/enum/Passive"
 import { Pkm } from "../types/enum/Pokemon"
 import { sum } from "../utils/array"
 import { isOnBench } from "../utils/board"
 import { logger } from "../utils/logger"
 import { pickRandomIn, shuffleArray } from "../utils/random"
-import { values } from "../utils/schemas"
+import { schemaValues } from "../utils/schemas"
 
 type DivergentEvolution<Param = any> = (
   pokemon: Pokemon,
@@ -67,7 +67,7 @@ export abstract class EvolutionRule {
         pokemonEvolved.passive !== Passive.COSMOG &&
         pokemonEvolved.passive !== Passive.COSMOEM
       ) {
-        pokemon.addMaxHP(10, player)
+        pokemon.addMaxHP(10)
         pokemon.stacks++
         pokemon.evolutionRule.tryEvolve(pokemon, player, stageLevel)
       }
@@ -94,7 +94,18 @@ export class CountEvolutionRule extends EvolutionRule {
 
   canEvolve(pokemon: Pokemon, player: Player, stageLevel: number): boolean {
     if (!pokemon.hasEvolution) return false
-    const copies = values(player.board).filter(
+
+    // special case for Avalugg passive, didnt find a better way to do it
+    if (
+      pokemon.name === Pkm.BERGMITE &&
+      schemaValues(player.board).find(
+        (p) => p.name === Pkm.AVALUGG || p.name === Pkm.HISUI_AVALUGG
+      )
+    ) {
+      return false
+    }
+
+    const copies = schemaValues(player.board).filter(
       (p) => p.index === pokemon.index && !p.items.has(Item.EVIOLITE)
     )
     return copies.length >= this.numberRequired
@@ -102,7 +113,18 @@ export class CountEvolutionRule extends EvolutionRule {
 
   canEvolveIfGettingOne(pokemon: Pokemon, player: Player): boolean {
     if (!pokemon.hasEvolution) return false
-    const copies = values(player.board).filter(
+
+    // special case for Avalugg passive, didnt find a better way to do it
+    if (
+      pokemon.name === Pkm.BERGMITE &&
+      schemaValues(player.board).find(
+        (p) => p.name === Pkm.AVALUGG || p.name === Pkm.HISUI_AVALUGG
+      )
+    ) {
+      return false
+    }
+
+    const copies = schemaValues(player.board).filter(
       (p) => p.index === pokemon.index && !p.items.has(Item.EVIOLITE)
     )
     return copies.length === this.numberRequired - 1
@@ -167,18 +189,6 @@ export class CountEvolutionRule extends EvolutionRule {
     carryOverPermanentStats(pokemonEvolved, pokemonsBeforeEvolution)
     pokemonEvolved.stacks = pokemon.stacks // carry over the stacks (since they're not supposed to be linked to the evolution rule)
 
-    if (pokemonsBeforeEvolution.some((p) => p.dishes.size > 0)) {
-      const dishes = pokemonsBeforeEvolution
-        .filter((p) => p.dishes.size > 0)
-        .flatMap((p) => values(p.dishes))
-      while (pokemonEvolved.canEat && dishes.length > 0) {
-        const dish = dishes.pop()
-        if (dish && !pokemonEvolved.dishes.has(dish)) {
-          pokemonEvolved.dishes.add(dish)
-        }
-      }
-    }
-
     shuffleArray(itemsCompleteOnBench)
     shuffleArray(itemsCompleteOnBoard)
 
@@ -206,12 +216,26 @@ export class CountEvolutionRule extends EvolutionRule {
     ]
     for (const itemComponent of itemComponentsToAdd) {
       if (
-        values(pokemonEvolved.items).some((i) => ItemComponents.includes(i)) ||
+        schemaValues(pokemonEvolved.items).some((i) =>
+          ItemComponents.includes(i)
+        ) ||
         pokemonEvolved.items.size >= 3
       ) {
         player.items.push(itemComponent)
       } else {
         pokemonEvolved.items.add(itemComponent)
+      }
+    }
+
+    if (pokemonsBeforeEvolution.some((p) => p.dishes.size > 0)) {
+      const dishes = pokemonsBeforeEvolution
+        .filter((p) => p.dishes.size > 0)
+        .flatMap((p) => schemaValues(p.dishes))
+      while (pokemonEvolved.canEat && dishes.length > 0) {
+        const dish = dishes.pop()
+        if (dish && !pokemonEvolved.dishes.has(dish)) {
+          pokemonEvolved.dishes.add(dish)
+        }
       }
     }
 
@@ -246,7 +270,9 @@ export class ItemEvolutionRule extends EvolutionRule {
 
   canEvolve(pokemon: Pokemon, player: Player, stageLevel: number): boolean {
     if (pokemon.items.has(Item.EVIOLITE)) return false
-    const itemsAndDishes = values(pokemon.items).concat(values(pokemon.dishes))
+    const itemsAndDishes = schemaValues(pokemon.items).concat(
+      schemaValues(pokemon.dishes)
+    )
     const itemEvolution = itemsAndDishes.find((item) =>
       this.itemsTriggeringEvolution.includes(item)
     )
@@ -260,7 +286,7 @@ export class ItemEvolutionRule extends EvolutionRule {
   }
 
   evolve(pokemon: Pokemon, player: Player, stageLevel: number): Pokemon {
-    const itemEvolution = values(pokemon.items).find((item) =>
+    const itemEvolution = schemaValues(pokemon.items).find((item) =>
       this.itemsTriggeringEvolution.includes(item)
     )
     const pokemonEvolutionName = this.getEvolution(
@@ -327,7 +353,7 @@ export class HatchEvolutionRule extends EvolutionRule {
     )
 
     if (pokemonEvolved != null && pokemon.name === Pkm.EGG && pokemon.shiny) {
-      player.items.push(pickRandomIn(ShinyItems))
+      player.items.push(pickRandomIn(GoldenEggItems))
     }
 
     return pokemonEvolved
@@ -395,7 +421,14 @@ export function carryOverPermanentStats(
     .filter<Ability>((tm): tm is Ability => tm !== Ability.DEFAULT)
   if (existingTms.length > 0) {
     pokemonEvolved.tm = pickRandomIn(existingTms)
-    pokemonEvolved.skill = pokemonEvolved.tm
+    if (pokemonEvolved.tm === Ability.SKILL_SWAP) {
+      // keep the ability learnt with skill swap if there is one
+      pokemonEvolved.skill =
+        pokemonsBeforeEvolution.find((p) => p.tm === Ability.SKILL_SWAP)
+          ?.skill ?? Ability.SKILL_SWAP
+    } else {
+      pokemonEvolved.skill = pokemonEvolved.tm
+    }
     pokemonEvolved.maxPP = 100
   }
 }
