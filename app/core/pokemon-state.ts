@@ -1,7 +1,7 @@
 import { ARMOR_FACTOR, FIGHTING_PHASE_DURATION } from "../config"
-import Player from "../models/colyseus-models/player"
-import { SynergyEffects } from "../models/effects"
-import { IPokemonEntity, Transfer } from "../types"
+import { SynergyEffects } from "../config/game/synergies"
+import type Player from "../models/colyseus-models/player"
+import { type IPokemonEntity, Transfer } from "../types"
 import { EffectEnum } from "../types/enum/Effect"
 import {
   AttackType,
@@ -11,6 +11,7 @@ import {
 } from "../types/enum/Game"
 import { Item } from "../types/enum/Item"
 import { Passive } from "../types/enum/Passive"
+import { Pkm } from "../types/enum/Pokemon"
 import { Synergy } from "../types/enum/Synergy"
 import { Weather } from "../types/enum/Weather"
 import { count } from "../utils/array"
@@ -26,7 +27,7 @@ import {
   PeriodicEffect
 } from "./effects/effect"
 import { applyWandEffects, humanHealEffect } from "./effects/synergies"
-import { PokemonEntity } from "./pokemon-entity"
+import type { PokemonEntity } from "./pokemon-entity"
 
 export default abstract class PokemonState {
   name: string = ""
@@ -123,14 +124,16 @@ export default abstract class PokemonState {
         damage = 0
       }
 
-      const { takenDamage, death } = applyWandEffects(
-        pokemon,
-        target,
-        damage,
-        crit
-      )
-      totalTakenDamage += takenDamage
-      if (death) hasAttackKilled = true
+      if (pokemon.types.has(Synergy.FAIRY)) {
+        const { takenDamage, death } = applyWandEffects(
+          pokemon,
+          target,
+          damage,
+          crit
+        )
+        totalTakenDamage += takenDamage
+        if (death) hasAttackKilled = true
+      }
 
       if (pokemon.effects.has(EffectEnum.CHARGE)) {
         const chargeDamage = damage * pokemon.count.ult * (1 + pokemon.ap / 100)
@@ -154,7 +157,7 @@ export default abstract class PokemonState {
       } else if (pokemon.effects.has(EffectEnum.CORKSCREW_CRASH)) {
         trueDamagePart += 1.0
       } else if (pokemon.effects.has(EffectEnum.MAX_MELTDOWN)) {
-        trueDamagePart += 1.2
+        trueDamagePart += 1.25
       }
       if (pokemon.items.has(Item.RED_ORB)) {
         trueDamagePart += 0.25
@@ -182,6 +185,24 @@ export default abstract class PokemonState {
             (abilityCrit ? pokemon.critPower : 1)
         )
         pokemon.effects.delete(EffectEnum.SHADOW_PUNCH_NEXT_ATTACK)
+      }
+
+      if (pokemon.effects.has(EffectEnum.ATTACK_ORDER_NEXT_ATTACK)) {
+        const abilityCrit = pokemon.effects.has(EffectEnum.ABILITY_CRIT) && crit
+        const nbComfeeAllies = board.cells.reduce((count, ally) => {
+          if (ally && ally.team === pokemon.team && ally.name === Pkm.COMBEE) {
+            return count + 1
+          }
+          return count
+        }, 0)
+
+        specialDamage += Math.ceil(
+          (([20, 40, 60][pokemon.stars - 1] ?? 60) +
+            nbComfeeAllies * ([10, 20, 30][pokemon.stars - 1] ?? 60)) *
+            (1 + pokemon.ap / 100) *
+            (abilityCrit ? pokemon.critPower : 1)
+        )
+        pokemon.effects.delete(EffectEnum.ATTACK_ORDER_NEXT_ATTACK)
       }
 
       if (trueDamagePart > 0) {

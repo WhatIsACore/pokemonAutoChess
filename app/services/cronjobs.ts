@@ -2,7 +2,7 @@ import { matchMaker } from "colyseus"
 import { CronJob } from "cron"
 import dayjs from "dayjs"
 import admin from "firebase-admin"
-import { UserRecord } from "firebase-admin/lib/auth/user-record"
+import type { UserRecord } from "firebase-admin/lib/auth/user-record"
 import {
   CRON_ELO_DECAY_DELAY,
   CRON_ELO_DECAY_MINIMUM_ELO,
@@ -21,6 +21,7 @@ import { GameMode } from "../types/enum/Game"
 import { GameEvent } from "../types/events"
 import { logger } from "../utils/logger"
 import { min } from "../utils/number"
+import { fetchMetaReports } from "./meta"
 import { notificationsService } from "./notifications"
 import { refreshSpriteGapData } from "./sprite-gap-scanner"
 
@@ -67,6 +68,17 @@ export function initCronJobs() {
     cronTime: "0 9 * * *", // every day at 9:00 AM UTC
     timeZone: "UTC",
     onTick: () => refreshSpriteGapData(),
+    start: true
+  })
+
+  // see https://github.com/keldaanCommunity/pokemonAutoChessMetaReport/blob/main/.github/workflows/main.yml
+  // Meta report generation task is launched at 1:00 AM UTC, so we expect meta report generation to be done by then (< 1 hour)
+  CronJob.from({
+    cronTime: "0 2 * * *", // every day at 2:00 AM UTC
+    timeZone: "UTC",
+    onTick: () => {
+      fetchMetaReports()
+    },
     start: true
   })
 }

@@ -33,6 +33,7 @@ import {
   SellPrices,
   SHOP_SIZE,
   SKY_MELODICA_CHANCE,
+  SynergyTriggers,
   TERRA_CYMBAL_CHANCE,
   UNOWN_PSY3_NB_SHOPS_INTERVAL,
   UNOWN_PSY5_NB_SHOPS_INTERVAL,
@@ -40,13 +41,12 @@ import {
   UniquePool
 } from "../config"
 import { pickFirstPartners } from "../core/scribbles"
-import GameState from "../rooms/states/game-state"
-import { IPokemon, IPokemonEntity } from "../types"
-import { Ability } from "../types/enum/Ability"
+import type GameState from "../rooms/states/game-state"
+import type { IPokemon, IPokemonEntity } from "../types"
 import { EffectEnum } from "../types/enum/Effect"
 import { Rarity } from "../types/enum/Game"
 import {
-  FishingRod,
+  type FishingRod,
   Item,
   ItemComponentsNoFossilOrScarf
 } from "../types/enum/Item"
@@ -55,7 +55,7 @@ import {
   Pkm,
   PkmDuos,
   PkmFamily,
-  PkmProposition,
+  type PkmProposition,
   PkmRegionalVariants,
   Unowns
 } from "../types/enum/Pokemon"
@@ -72,40 +72,22 @@ import {
   shuffleArray
 } from "../utils/random"
 import { schemaValues } from "../utils/schemas"
-import Player from "./colyseus-models/player"
-import { PlayerChoice, PlayerChoiceType } from "./colyseus-models/player-choice"
-import { Pokemon, PokemonClasses } from "./colyseus-models/pokemon"
+import type Player from "./colyseus-models/player"
+import {
+  PlayerChoice,
+  type PlayerChoiceType
+} from "./colyseus-models/player-choice"
+import { type Pokemon, PokemonClasses } from "./colyseus-models/pokemon"
 import { getWildChance } from "./colyseus-models/synergies"
 import { getPokemonBaseline } from "./pokemon-factory"
-import { getPokemonData } from "./precomputed/precomputed-pokemon-data"
+import {
+  getPokemonData,
+  getRegularsTier1
+} from "./precomputed/precomputed-pokemon-data"
 import { PRECOMPUTED_POKEMONS_PER_RARITY } from "./precomputed/precomputed-rarity"
 
 export function getPoolSize(rarity: Rarity, maxStars: number): number {
   return PoolSize[rarity][clamp(maxStars, 1, 3) - 1]
-}
-
-export function getRegularsTier1(pokemons: Pkm[]) {
-  return pokemons.filter((p) => {
-    const pokemonData = getPokemonData(p)
-    return (
-      pokemonData.stars === 1 &&
-      pokemonData.skill !== Ability.DEFAULT &&
-      !pokemonData.additional &&
-      !pokemonData.regional
-    )
-  })
-}
-
-export function getAdditionalsTier1(pokemons: Pkm[]) {
-  return pokemons.filter((p) => {
-    const pokemonData = getPokemonData(p)
-    return (
-      pokemonData.stars === 1 &&
-      pokemonData.skill !== Ability.DEFAULT &&
-      pokemonData.additional &&
-      !pokemonData.regional
-    )
-  })
 }
 
 export function getSellPrice(
@@ -342,7 +324,15 @@ export default class Shop {
   assignShop(player: Player, manualRefresh: boolean, state: GameState) {
     player.shop.forEach((pkm) => this.releasePokemon(pkm, player, state))
 
-    const hasTranscendence = player.effects.has(EffectEnum.TRANSCENDENCE)
+    let psychicLevel = player.synergies.get(Synergy.PSYCHIC) ?? 0
+
+    if (!manualRefresh && player.unownReminiscences > 0) {
+      // consume unown reminescenses for next automatic shopm
+      psychicLevel += player.unownReminiscences
+      player.unownReminiscences = 0
+    }
+
+    const hasTranscendence = psychicLevel >= SynergyTriggers[Synergy.PSYCHIC][2]
     if (hasTranscendence) {
       player.shopsSinceLastUnownShop += 1
     }
