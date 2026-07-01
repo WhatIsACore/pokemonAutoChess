@@ -1,6 +1,6 @@
 import { Command } from "@colyseus/command"
 import { SetSchema, StateView } from "@colyseus/schema"
-import { Client, updateLobby } from "colyseus"
+import { type Client, updateLobby } from "colyseus"
 import {
   AdditionalPicksStages,
   BOARD_SIDE_HEIGHT,
@@ -20,32 +20,37 @@ import {
   SHARDS_PER_UNOWN_WANDERER,
   SHINY_UNOWN_ENCOUNTER_CHANCE,
   StageDuration,
-  SynergyTriggers,
   TREASURE_BOX_LIFE_THRESHOLD,
   UNOWN_ENCOUNTER_CHANCE
 } from "../../config"
-import { castAbility } from "../../core/abilities/abilities"
+import { AbilityStrategies } from "../../core/abilities/abilities"
+import { castAbility } from "../../core/abilities/cast"
 import {
+  OnChangePositionEffect,
   OnItemDroppedEffect,
+  OnSpotlightChangeEffect,
   OnStageStartEffect
 } from "../../core/effects/effect"
 import { ItemEffects } from "../../core/effects/items"
 import { PassiveEffects } from "../../core/effects/passives"
+import { SynergyEffects } from "../../core/effects/synergies"
 import { giveRandomEgg } from "../../core/eggs"
-import {
-  ConditionBasedEvolutionRule,
-  CountEvolutionRule,
-  HatchEvolutionRule
-} from "../../core/evolution-rules"
+import { EvolutionManager } from "../../core/evolution-logic/evolution-manager"
 import { getFlowerPotsUnlocked } from "../../core/flower-pots"
 import { selectMatchups } from "../../core/matchmaking"
 import { canSell, PokemonEntity } from "../../core/pokemon-entity"
 import Simulation from "../../core/simulation"
 import { getLevelUpCost } from "../../models/colyseus-models/experience-manager"
-import Player from "../../models/colyseus-models/player"
-import { PlayerChoice } from "../../models/colyseus-models/player-choice"
-import { Pokemon, PokemonClasses } from "../../models/colyseus-models/pokemon"
-import { getSynergyStep } from "../../models/colyseus-models/synergies"
+import type Player from "../../models/colyseus-models/player"
+import {
+  PlayerChoice,
+  type PlayerChoiceType
+} from "../../models/colyseus-models/player-choice"
+import {
+  type Pokemon,
+  PokemonClasses
+} from "../../models/colyseus-models/pokemon"
+import { getSynergyTier } from "../../models/colyseus-models/synergies"
 import UserMetadata from "../../models/mongo-models/user-metadata"
 import PokemonFactory, {
   getPokemonBaseline
@@ -56,14 +61,18 @@ import { getBuyPrice, getSellPrice } from "../../models/shop"
 import { updatePlayerTitlesAfterFight } from "../../models/titles"
 import {
   Emotion,
-  IClient,
-  IDragDropCombineMessage,
-  IDragDropItemMessage,
-  IDragDropMessage,
+  type IClient,
+  type IDragDropCombineMessage,
+  type IDragDropItemMessage,
+  type IDragDropMessage,
+  RemovableItems,
   Role,
   Title,
+  TMPerAbility,
   Transfer
 } from "../../types"
+import { EvolutionRuleType } from "../../types/EvolutionRules"
+import { Ability } from "../../types/enum/Ability"
 import { DungeonPMDO } from "../../types/enum/Dungeon"
 import { EffectEnum } from "../../types/enum/Effect"
 import {
@@ -86,8 +95,6 @@ import {
   Mulches,
   Scarves,
   Sweets,
-  SynergyGems,
-  SynergyGivenByGem,
   SynergyGivenByItem,
   SynergyStones,
   Tools,
@@ -106,7 +113,7 @@ import { Synergy } from "../../types/enum/Synergy"
 import { TownEncounters } from "../../types/enum/TownEncounter"
 import { WandererBehavior, WandererType } from "../../types/enum/Wanderer"
 import type { IDetailledPokemon } from "../../types/models/bot-v2"
-import { DisplayText } from "../../types/strings/DisplayText"
+import type { DisplayText } from "../../types/strings/DisplayText"
 import { isIn, removeInArray } from "../../utils/array"
 import { getAvatarString } from "../../utils/avatar"
 import {
@@ -128,7 +135,8 @@ import {
 } from "../../utils/random"
 import { resetArraySchema, schemaValues } from "../../utils/schemas"
 import { getWeather } from "../../utils/weather"
-import GameRoom from "../game-room"
+import type GameRoom from "../game-room"
+import type GameState from "../states/game-state"
 
 export class OnBuyPokemonCommand extends Command<
   GameRoom,
@@ -151,8 +159,8 @@ export class OnBuyPokemonCommand extends Command<
     const pokemon = PokemonFactory.createPokemonFromName(name, player)
     const isEvolution =
       pokemon.evolutionRule &&
-      pokemon.evolutionRule instanceof CountEvolutionRule &&
-      pokemon.evolutionRule.canEvolveIfGettingOne(pokemon, player)
+      pokemon.evolutionRule.type === EvolutionRuleType.COUNT &&
+      EvolutionManager.canEvolveIfGettingOne(pokemon, player)
 
     const cost = getBuyPrice(name, this.state.specialGameRule)
     const freeSpaceOnBench = getFreeSpaceOnBench(player.board)
@@ -260,8 +268,8 @@ export class OnPokemonCatchCommand extends Command<
       const hasSpaceOnBench =
         freeSpaceOnBench > 0 ||
         (pokemon.evolutionRule &&
-          pokemon.evolutionRule instanceof CountEvolutionRule &&
-          pokemon.evolutionRule.canEvolveIfGettingOne(pokemon, player))
+          pokemon.evolutionRule.type === EvolutionRuleType.COUNT &&
+          EvolutionManager.canEvolveIfGettingOne(pokemon, player))
 
       if (hasSpaceOnBench) {
         const x = getFirstAvailablePositionInBench(player.board)
@@ -432,18 +440,35 @@ export class OnDragDropPokemonCommand extends Command<
   swapPokemonPositions(player: Player, pokemon: Pokemon, x: number, y: number) {
     const pokemonToSwap = player.getPokemonAt(x, y)
     if (pokemonToSwap) {
+      const oldX = pokemonToSwap.positionX
+      const oldY = pokemonToSwap.positionY
       pokemonToSwap.positionX = pokemon.positionX
       pokemonToSwap.positionY = pokemon.positionY
-      pokemonToSwap.onChangePosition(
-        pokemon.positionX,
-        pokemon.positionY,
+      onPokemonChangePosition({
+        pokemon: pokemonToSwap,
+        newX: pokemon.positionX,
+        newY: pokemon.positionY,
+        oldX,
+        oldY,
         player,
-        this.state
-      )
+        state: this.state,
+        room: this.room
+      })
     }
+    const oldX = pokemon.positionX
+    const oldY = pokemon.positionY
     pokemon.positionX = x
     pokemon.positionY = y
-    pokemon.onChangePosition(x, y, player, this.state)
+    onPokemonChangePosition({
+      pokemon,
+      newX: x,
+      newY: y,
+      oldX,
+      oldY,
+      player,
+      state: this.state,
+      room: this.room
+    })
   }
 }
 
@@ -483,17 +508,39 @@ export class OnSwitchBenchAndBoardCommand extends Command<
         !(isBoardFull && pokemon.doesCountForTeamSize)
       ) {
         const [x, y] = destination
+        const oldX = pokemon.positionX
+        const oldY = pokemon.positionY
         pokemon.positionX = x
         pokemon.positionY = y
-        pokemon.onChangePosition(x, y, player, this.state)
+        onPokemonChangePosition({
+          pokemon,
+          newX: x,
+          newY: y,
+          oldX,
+          oldY,
+          player,
+          state: this.state,
+          room: this.room
+        })
       }
     } else {
       // pokemon is on board, switch to bench
       const x = getFirstAvailablePositionInBench(player.board)
       if (x !== null) {
+        const oldX = pokemon.positionX
+        const oldY = pokemon.positionY
         pokemon.positionX = x
         pokemon.positionY = 0
-        pokemon.onChangePosition(x, 0, player, this.state)
+        onPokemonChangePosition({
+          pokemon,
+          newX: x,
+          newY: 0,
+          oldX: oldX,
+          oldY: oldY,
+          player,
+          state: this.state,
+          room: this.room
+        })
       }
     }
 
@@ -598,7 +645,7 @@ export class OnDragDropCombineCommand extends Command<
       return
     } else {
       if (itemA === Item.SILK_SCARF || itemB === Item.SILK_SCARF) {
-        const nbScarvesBasedOnNormalSynergy = getSynergyStep(
+        const nbScarvesBasedOnNormalSynergy = getSynergyTier(
           player.synergies,
           Synergy.NORMAL
         )
@@ -681,10 +728,7 @@ export class OnDragDropItemCommand extends Command<
         return
       }
     } else if (zone === "berry-tree-zone") {
-      const grassLevel = player.synergies.get(Synergy.GRASS) ?? 0
-      const nbTrees = SynergyTriggers[Synergy.GRASS].filter(
-        (n) => n <= grassLevel
-      ).length
+      const nbTrees = getSynergyTier(player.synergies, Synergy.GRASS)
 
       if (item === Item.RICH_MULCH && index < nbTrees) {
         player.berryTreesStages[index] = 3
@@ -741,7 +785,8 @@ export class OnDragDropItemCommand extends Command<
         pokemon.items.add(item) // add the item just in time for the evolution
         const pokemonEvolved = this.room.checkEvolutionsAfterItemAcquired(
           playerId,
-          pokemon
+          pokemon,
+          item
         )
         if (pokemonEvolved) pokemonEvolved.items.delete(item)
         else pokemon.items.delete(item)
@@ -758,7 +803,7 @@ export class OnDragDropItemCommand extends Command<
       }
     }
 
-    if (UnholdableItems.includes(item) && !ConsumableItems.includes(item)) {
+    if (isIn(UnholdableItems, item) && !ConsumableItems.includes(item)) {
       // Unholdable and non-consummable items should have zero interaction on any Pokémon
       client.send(Transfer.DRAG_DROP_CANCEL, message)
       return
@@ -766,7 +811,7 @@ export class OnDragDropItemCommand extends Command<
 
     if (
       pokemon.canHoldItems === false &&
-      !(UnholdableItems.includes(item) && isIn(ConsumableItems, item)) // unholdable consumable items like dishes or dojo tickets can still be used on pokemon that can't hold items, since they are consumed right away and don't actually get held by the pokemon
+      !(isIn(UnholdableItems, item) && isIn(ConsumableItems, item)) // unholdable consumable items like dishes or dojo tickets can still be used on pokemon that can't hold items, since they are consumed right away and don't actually get held by the pokemon
     ) {
       client.send(Transfer.DRAG_DROP_CANCEL, message)
       return
@@ -781,7 +826,7 @@ export class OnDragDropItemCommand extends Command<
     if (
       pokemon.items.size >= 3 &&
       !(isBasicItem && existingBasicItemToCombine) &&
-      UnholdableItems.includes(item) === false
+      !isIn(UnholdableItems, item)
     ) {
       client.send(Transfer.DRAG_DROP_CANCEL, {
         ...message,
@@ -816,7 +861,7 @@ export class OnDragDropItemCommand extends Command<
       const itemCombined = recipe[0] as Item
 
       if (recipe[1].includes(Item.SILK_SCARF)) {
-        const nbScarvesBasedOnNormalSynergy = getSynergyStep(
+        const nbScarvesBasedOnNormalSynergy = getSynergyTier(
           player.synergies,
           Synergy.NORMAL
         )
@@ -843,7 +888,7 @@ export class OnDragDropItemCommand extends Command<
       }
     } else {
       if (
-        (isIn(SynergyStones, item) || item === Item.FRIEND_BOW) &&
+        isIn(SynergyStones, item) &&
         pokemon.types.has(SynergyGivenByItem[item])
       ) {
         // prevent combining into a synergy stone on a pokemon that already has this synergy
@@ -858,7 +903,7 @@ export class OnDragDropItemCommand extends Command<
       pokemon.shiny = true
     }
 
-    this.room.checkEvolutionsAfterItemAcquired(playerId, pokemon)
+    this.room.checkEvolutionsAfterItemAcquired(playerId, pokemon, item)
 
     if (pokemon.items.has(item) && isIn(UnholdableItems, item)) {
       // if the item is not holdable, we immediately remove it from the pokemon items
@@ -988,7 +1033,7 @@ export class OnPickBerryCommand extends Command<
     if (player.berryTreesStages[berryIndex] >= 3) {
       player.berryTreesStages[berryIndex] = 0
       const type =
-        getSynergyStep(player.synergies, Synergy.GRASS) === 4
+        getSynergyTier(player.synergies, Synergy.GRASS) === 4
           ? GOLDEN_BERRY_TREE_TYPES[berryIndex]
           : player.berryTreesType[berryIndex]
       player.items.push(type)
@@ -1287,14 +1332,7 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
   updatePlayerBetweenStages(player: Player) {
     const board = schemaValues(player.board)
 
-    if (
-      getSynergyStep(player.synergies, Synergy.FIRE) === 4 &&
-      player.items.includes(Item.FIRE_SHARD) === false &&
-      player.life > 2
-    ) {
-      player.items.push(Item.FIRE_SHARD)
-    }
-
+    // Encounter effects
     if (
       player.items.includes(Item.TREASURE_BOX) &&
       player.life <= TREASURE_BOX_LIFE_THRESHOLD
@@ -1355,90 +1393,6 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
           player.items.push(...rewards)
         }
       }, 10000)
-    }
-
-    const nbTrees = getSynergyStep(player.synergies, Synergy.GRASS)
-    for (let i = 0; i < nbTrees; i++) {
-      player.berryTreesStages[i] = max(3)(player.berryTreesStages[i] + 1)
-    }
-
-    if (getSynergyStep(player.synergies, Synergy.GROUND) > 0) {
-      player.board.forEach((pokemon, pokemonId) => {
-        if (
-          pokemon.types.has(Synergy.GROUND) &&
-          !isOnBench(pokemon) &&
-          pokemon.items.has(Item.CHEF_HAT) === false
-        ) {
-          const index =
-            (pokemon.positionY - 1) * BOARD_WIDTH + pokemon.positionX
-          const hasAlreadyReachedMaxDepth = player.groundHoles[index] === 5
-          const isReachingMaxDepth = player.groundHoles[index] === 4
-          if (!hasAlreadyReachedMaxDepth) {
-            let buriedItem = isReachingMaxDepth
-              ? player.buriedItems[index]
-              : null
-            if (
-              pokemon.items.has(Item.EXPLORER_KIT) &&
-              isReachingMaxDepth &&
-              !buriedItem
-            ) {
-              if (chance(0.1, pokemon)) {
-                buriedItem = Item.BIG_NUGGET
-              } else if (chance(0.5, pokemon)) {
-                buriedItem = Item.NUGGET
-              } else {
-                buriedItem = Item.COIN
-              }
-            }
-            this.room.broadcast(Transfer.DIG, {
-              pokemonId,
-              buriedItem
-            })
-            this.room.clock.setTimeout(() => {
-              player.groundHoles[index] = max(5)(player.groundHoles[index] + 1)
-              if (pokemon.passive === Passive.ORTHWORM) {
-                pokemon.addMaxHP(5)
-              }
-              player.board.forEach((pokemon) => {
-                // Condition based evolutions on ground hole dig
-                if (
-                  pokemon.evolutionRule instanceof ConditionBasedEvolutionRule
-                ) {
-                  pokemon.evolutionRule.tryEvolve(
-                    pokemon,
-                    player,
-                    this.state.stageLevel
-                  )
-                }
-              })
-            }, 1000)
-
-            if (buriedItem) {
-              this.room.clock.setTimeout(() => {
-                if (buriedItem === Item.COIN) {
-                  player.addMoney(1, true, null)
-                } else if (buriedItem === Item.NUGGET) {
-                  player.addMoney(3, true, null)
-                } else if (buriedItem === Item.BIG_NUGGET) {
-                  player.addMoney(10, true, null)
-                } else if (buriedItem === Item.TREASURE_BOX) {
-                  player.items.push(...pickNRandomIn(ItemComponents, 2))
-                } else if (isIn(SynergyGems, buriedItem)) {
-                  const type = SynergyGivenByGem[buriedItem]
-                  player.bonusSynergies.set(
-                    type,
-                    (player.bonusSynergies.get(type) ?? 0) + 1
-                  )
-                  player.items.push(buriedItem)
-                  player.updateSynergies()
-                } else {
-                  player.items.push(buriedItem)
-                }
-              }, 2500)
-            }
-          }
-        }
-      })
     }
 
     const rottingItems: Map<Item, Item> = new Map([
@@ -1509,6 +1463,14 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
       })
     }
 
+    // Synergy effects on stage start
+    player.synergies
+      .getActiveSynergyTiers()
+      .flatMap((synergyTier: EffectEnum) => SynergyEffects[synergyTier])
+      .filter((p) => p instanceof OnStageStartEffect)
+      .forEach((effect) => effect.apply({ player, room: this.room }))
+
+    // Pokemon effects on stage start
     board.forEach((pokemon) => {
       // Passives updating every stage
       const passiveEffects =
@@ -1529,8 +1491,11 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
       )
 
       // Condition based evolutions on stage start
-      if (pokemon.evolutionRule instanceof ConditionBasedEvolutionRule) {
-        pokemon.evolutionRule.tryEvolve(pokemon, player, this.state.stageLevel)
+      if (
+        pokemon.evolutionRule.type === EvolutionRuleType.STATE ||
+        pokemon.evolutionRule.type === EvolutionRuleType.STACK
+      ) {
+        EvolutionManager.tryEvolve(pokemon, player, this.state)
       }
     })
 
@@ -1567,14 +1532,20 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
             )
 
             if (coordinates) {
+              const oldX = pokemon.positionX
+              const oldY = pokemon.positionY
               pokemon.positionX = coordinates[0]
               pokemon.positionY = coordinates[1]
-              pokemon.onChangePosition(
-                coordinates[0],
-                coordinates[1],
+              onPokemonChangePosition({
+                pokemon,
+                newX: coordinates[0],
+                newY: coordinates[1],
+                oldX,
+                oldY,
                 player,
-                this.state
-              )
+                state: this.state,
+                room: this.room
+              })
             }
           }
         }
@@ -1589,13 +1560,15 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
   stopPickingPhase() {
     this.state.players.forEach((player) => {
       // auto pick choices if player did not choose in time
+      const autoPickChoices: PlayerChoiceType[] = [
+        "addPick",
+        "item",
+        "starter",
+        "unique",
+        "legendary"
+      ]
       player.choices
-        .filter(
-          (choice) =>
-            choice.type === "addPick" ||
-            choice.type === "item" ||
-            choice.type === "unique"
-        )
+        .filter((choice) => autoPickChoices.includes(choice.type))
         .forEach((choice) => {
           const randomPick = randomBetween(
             0,
@@ -1658,18 +1631,8 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
 
           // Update Pokémon that have special effects between stages
           player.board.forEach((pokemon, key) => {
-            if (pokemon.evolutionRule) {
-              if (pokemon.evolutionRule instanceof HatchEvolutionRule) {
-                pokemon.evolutionRule.updateHatch(
-                  pokemon,
-                  player,
-                  this.state.stageLevel
-                )
-              }
-            }
-            if (pokemon.passive === Passive.UNOWN && !isOnBench(pokemon)) {
-              // remove after one fight
-              player.board.delete(key)
+            if (pokemon.evolutionRule?.type === EvolutionRuleType.HATCH) {
+              EvolutionManager.updateHatch(pokemon, player)
             }
 
             if (pokemon.action === PokemonActionState.TRAINING) {
@@ -1694,6 +1657,7 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
             } else {
               this.state.shop.refillShop(player, this.state)
               player.shopLocked = false
+              player.unownReminiscences = 0
             }
           }
         }
@@ -1891,7 +1855,13 @@ export class OnUpdatePhaseCommand extends Command<GameRoom> {
               player.team,
               simulation
             )
-            castAbility(caster.skill, caster, simulation.board, null, false)
+            castAbility(
+              AbilityStrategies[caster.skill],
+              caster,
+              simulation.board,
+              null,
+              false
+            )
           }, 10000)
         })
       })
@@ -2085,10 +2055,101 @@ export class OnOverwriteBoardCommand extends Command<GameRoom> {
       const pokemon = PokemonFactory.createPokemonFromName(p.name, p)
       pokemon.positionX = p.x
       pokemon.positionY = p.y
-      p.items.forEach((item) => pokemon.items.add(item))
+      pokemon.addItems(p.items, player)
       player.board.set(pokemon.id, pokemon)
     })
     player.updateSynergies()
     player.boardSize = this.room.getTeamSize(player.board)
+  }
+}
+
+export class OnDevCommand extends Command<GameRoom> {
+  execute(msg: { action: string }) {
+    if (msg.action === "skipStage") {
+      this.room.state.time = 0
+    }
+  }
+}
+
+export function onPokemonChangePosition({
+  pokemon,
+  newX,
+  newY,
+  player,
+  oldX,
+  oldY,
+  state,
+  room,
+  doNotRemoveItems = false
+}: {
+  pokemon: Pokemon
+  newX: number
+  newY: number
+  player: Player
+  oldX: number
+  oldY: number
+  state: GameState
+  room: GameRoom
+  doNotRemoveItems?: boolean
+}) {
+  // called after manually changing position of the pokemon on board
+
+  if (newY === 0 && !doNotRemoveItems) {
+    const itemsToRemove = schemaValues(pokemon.items).filter((item) => {
+      return (
+        isIn(RemovableItems, item) ||
+        (state?.specialGameRule === SpecialGameRule.SLAMINGO &&
+          item !== Item.RARE_CANDY)
+      )
+    })
+    player.items.push(...itemsToRemove)
+    pokemon.removeItems(itemsToRemove, player)
+
+    if (pokemon.tm && TMPerAbility.has(pokemon.tm)) {
+      player.items.push(TMPerAbility.get(pokemon.tm)!)
+      pokemon.tm = Ability.DEFAULT
+      pokemon.skill = pokemon.baseSkill
+      pokemon.maxPP = pokemon.baseMaxPP
+    }
+  }
+
+  if (pokemon.passive !== Passive.NONE) {
+    const hasLight = player.synergies.hasSynergyActive(Synergy.LIGHT)
+    const inSpotlight =
+      hasLight &&
+      ((newX === player.lightX && newY === player.lightY) ||
+        pokemon.items.has(Item.SHINY_STONE))
+
+    PassiveEffects[pokemon.passive]?.forEach((effect) => {
+      if (effect instanceof OnChangePositionEffect) {
+        effect.apply({
+          pokemon,
+          player,
+          state,
+          room,
+          oldX,
+          oldY,
+          newX,
+          newY
+        })
+      }
+
+      if (effect instanceof OnSpotlightChangeEffect) {
+        effect.apply({
+          pokemon,
+          player,
+          inSpotlight
+        })
+      }
+    })
+  }
+
+  if (pokemon.name === Pkm.MANTYKE || pokemon.name === Pkm.REMORAID) {
+    // can't be done as an OnChangePositionEffect because of circular dependency with evolution manager, so we do it here manually
+    for (const pokemon of player.board.values()) {
+      if (pokemon.name === Pkm.MANTYKE) {
+        EvolutionManager.tryEvolve(pokemon, player, player.board)
+      }
+    }
   }
 }

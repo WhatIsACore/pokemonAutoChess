@@ -1,27 +1,31 @@
 import { memoryUsage } from "node:process"
 import { setTimeout } from "node:timers/promises"
 import { Command } from "@colyseus/command"
-import { Client, matchMaker } from "colyseus"
-import { UserRecord } from "firebase-admin/lib/auth/user-record"
-import { QueryFilter } from "mongoose"
+import { type Client, matchMaker } from "colyseus"
+import type { UserRecord } from "firebase-admin/lib/auth/user-record"
+import type { QueryFilter } from "mongoose"
 import {
   EloRankThreshold,
   MAX_PLAYERS_PER_GAME,
   MIN_HUMAN_PLAYERS
 } from "../../config"
+import { GADGETS } from "../../config/game/gadgets"
 import {
   getPendingGame,
   isPlayerTimeout,
   setPendingGame
 } from "../../core/pending-game-manager"
-import { GameUser, IGameUser } from "../../models/colyseus-models/game-user"
+import {
+  GameUser,
+  type IGameUser
+} from "../../models/colyseus-models/game-user"
 import { BotV2 } from "../../models/mongo-models/bot-v2"
 import UserMetadata from "../../models/mongo-models/user-metadata"
 import { Role } from "../../types"
 import { CloseCodes } from "../../types/enum/CloseCodes"
-import { EloRank } from "../../types/enum/EloRank"
+import type { EloRank } from "../../types/enum/EloRank"
 import { BotDifficulty, GameMode } from "../../types/enum/Game"
-import { SpecialGameRule } from "../../types/enum/SpecialGameRule"
+import type { SpecialGameRule } from "../../types/enum/SpecialGameRule"
 import type { IBot } from "../../types/models/bot-v2"
 import { getRank } from "../../utils/elo"
 import { logger } from "../../utils/logger"
@@ -29,7 +33,7 @@ import { max } from "../../utils/number"
 import { cleanProfanity } from "../../utils/profanity-filter"
 import { pickRandomIn } from "../../utils/random"
 import { schemaEntries, schemaValues } from "../../utils/schemas"
-import PreparationRoom from "../preparation-room"
+import type PreparationRoom from "../preparation-room"
 
 export class OnJoinCommand extends Command<
   PreparationRoom,
@@ -102,6 +106,14 @@ export class OnJoinCommand extends Command<
           !isAdmin
         ) {
           client.leave(CloseCodes.USER_RANK_TOO_HIGH)
+          return
+        }
+
+        if (
+          this.state.gameMode === GameMode.RANKED &&
+          u.level < GADGETS.certificate.levelRequired
+        ) {
+          client.leave(CloseCodes.USER_RANK_TOO_LOW)
           return
         }
 
@@ -742,17 +754,23 @@ export class OnAddBotCommand extends Command<PreparationRoom, OnAddBotPayload> {
         let elo: QueryFilter<IBot>["elo"] | undefined
 
         switch (difficulty) {
+          case BotDifficulty.BEGINNER:
+            elo = { $lt: 850 }
+            break
           case BotDifficulty.EASY:
-            elo = { $lt: 800 }
+            elo = { $gte: 850, $lt: 999 }
             break
           case BotDifficulty.MEDIUM:
-            elo = { $gte: 800, $lt: 1100 }
+            elo = { $gte: 1000, $lt: 1149 }
             break
           case BotDifficulty.HARD:
-            elo = { $gte: 1100, $lt: 1400 }
+            elo = { $gte: 1150, $lt: 1299 }
             break
           case BotDifficulty.EXTREME:
-            elo = { $gte: 1400 }
+            elo = { $gte: 1300, $lt: 1449 }
+            break
+          case BotDifficulty.MASTER:
+            elo = { $gte: 1450 }
             break
         }
 

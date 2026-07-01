@@ -2,7 +2,7 @@
   AnimationType,
   AttackSprite,
   HitSprite,
-  PokemonAnimationConfig
+  type PokemonAnimationConfig
 } from "../../../../types/Animation"
 import { Pkm } from "../../../../types/enum/Pokemon"
 
@@ -1662,9 +1662,9 @@ export const PokemonAnimations: {
     hitSprite: HitSprite.FAIRY_HIT
   },
   [Pkm.KELDEO]: {
-    attack: AnimationType.Swing,
-    ability: AnimationType.RearUp,
-    emote: AnimationType.Shoot,
+    attack: AnimationType.Attack,
+    ability: AnimationType.Shoot,
+    emote: AnimationType.RearUp,
     attackSprite: AttackSprite.FIGHTING_MELEE,
     hitSprite: HitSprite.WATER_HIT
   },
@@ -2271,22 +2271,22 @@ export const PokemonAnimations: {
   },
   [Pkm.BUDEW]: {
     attack: AnimationType.Shoot,
-    ability: AnimationType.Swing,
-    emote: AnimationType.Shoot,
+    ability: AnimationType.DeepBreath,
+    emote: AnimationType.Pose,
     attackSprite: AttackSprite.GRASS_RANGE,
     hitSprite: HitSprite.GRASS_HIT
   },
   [Pkm.ROSELIA]: {
     attack: AnimationType.Shoot,
-    ability: AnimationType.Swing,
-    emote: AnimationType.Shoot,
+    ability: AnimationType.SpAttack,
+    emote: AnimationType.Pose,
     attackSprite: AttackSprite.GRASS_RANGE,
     hitSprite: HitSprite.GRASS_HIT
   },
   [Pkm.ROSERADE]: {
     attack: AnimationType.Shoot,
-    ability: AnimationType.Swing,
-    emote: AnimationType.Shoot,
+    ability: AnimationType.SpAttack,
+    emote: AnimationType.Pose,
     attackSprite: AttackSprite.GRASS_RANGE,
     hitSprite: HitSprite.GRASS_HIT
   },
@@ -4293,7 +4293,7 @@ export const PokemonAnimations: {
     attackSprite: AttackSprite.BUG_MELEE,
     hitSprite: HitSprite.BUG_HIT
   },
-  [Pkm.VESPIQUEEN]: {
+  [Pkm.VESPIQUEN]: {
     attack: AnimationType.Attack,
     ability: AnimationType.SpAttack,
     emote: AnimationType.Shoot,
@@ -6575,6 +6575,14 @@ export const PokemonAnimations: {
     shinyUnavailable: true,
     noShadow: true
   },
+  [Pkm.BUG_NEST]: {
+    attack: AnimationType.Idle,
+    ability: AnimationType.Idle,
+    emote: AnimationType.Idle,
+    hop: AnimationType.Idle,
+    shinyUnavailable: true,
+    noShadow: true
+  },
   [Pkm.ELGYEM]: {
     attack: AnimationType.Shoot,
     ability: AnimationType.Charge,
@@ -7915,8 +7923,7 @@ export const PokemonAnimations: {
     attack: AnimationType.Attack,
     ability: AnimationType.Shoot,
     emote: AnimationType.RearUp,
-    attackSprite: AttackSprite.WATER_MELEE,
-    shinyUnavailable: true
+    attackSprite: AttackSprite.WATER_MELEE
   },
   [Pkm.TATSUGIRI_CURLY]: {
     attack: AnimationType.Attack,
@@ -8064,5 +8071,12 @@ export const PokemonAnimations: {
     ability: AnimationType.Swing,
     emote: AnimationType.Shoot,
     attackSprite: AttackSprite.BUG_MELEE
+  },
+  [Pkm.PASSIMIAN]: {
+    attack: AnimationType.SpAttack,
+    ability: AnimationType.SpAttack,
+    emote: AnimationType.Shoot,
+    attackSprite: AttackSprite.BALL_RANGE,
+    hitSprite: HitSprite.FIGHTING_HIT
   }
 }

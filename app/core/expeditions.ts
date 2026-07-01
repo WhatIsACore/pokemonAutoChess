@@ -1,5 +1,9 @@
 import { t } from "i18next"
-import { getBaseAltForm, RegionDetails, SynergyTriggers } from "../config"
+import {
+  getBaseAltForm,
+  RegionDetails,
+  SynergyTiersThresholds
+} from "../config"
 import { precomputedPokemons } from "../models/precomputed/precomputed-pokemons"
 import {
   CraftableItemsNoScarves,
@@ -10,20 +14,20 @@ import {
 } from "../types"
 import { DungeonPMDO } from "../types/enum/Dungeon"
 import {
-  BattleMissionData,
-  BattleMissionStat,
+  type BattleMissionData,
+  type BattleMissionStat,
   BattleMissionStats,
-  DeliveryMissionData,
-  Expedition,
-  ExpeditionData,
+  type DeliveryMissionData,
+  type Expedition,
+  type ExpeditionData,
   ExpeditionRank,
   ExpeditionType,
-  ExplorationMissionData,
-  RescueMissionData
+  type ExplorationMissionData,
+  type RescueMissionData
 } from "../types/enum/Expedition"
 import { Rarity } from "../types/enum/Game"
 import { Synergy } from "../types/enum/Synergy"
-import {
+import type {
   IUserMetadataClient,
   IUserMetadataMongo,
   IUserMetadataUnpacked
@@ -201,8 +205,9 @@ export function getExpeditionData(
         (s) => s !== Synergy.BABY
       )
       const synergy = regionSynergies[expedition.hash % regionSynergies.length]
-      const synergyTriggers = SynergyTriggers[synergy]
-      const level = synergyTriggers[max(synergyTriggers.length - 1)(rankIndex)]
+      const synergyThresholds = SynergyTiersThresholds[synergy]
+      const level =
+        synergyThresholds[max(synergyThresholds.length - 1)(rankIndex)]
       return {
         region,
         synergy,

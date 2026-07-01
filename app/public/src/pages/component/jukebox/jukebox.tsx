@@ -1,6 +1,10 @@
-import React, { Dispatch, SetStateAction, useEffect, useState } from "react"
+import type React from "react"
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { DungeonMusic } from "../../../../../types/enum/Dungeon"
+import {
+  DungeonMusic,
+  DungeonMusicCredits
+} from "../../../../../types/enum/Dungeon"
 import { pickRandomIn } from "../../../../../utils/random"
 import { usePreference } from "../../../preferences"
 import { getGameScene } from "../../game"
@@ -31,20 +35,28 @@ export default function Jukebox(props: {
     }
   }, [music, musicPlaying, loading])
 
+  const credits = DungeonMusicCredits[musicPlaying] ?? null
+
   function changeMusic(name: DungeonMusic) {
     setMusic(name)
     const gameScene = getGameScene()
     if (gameScene) {
       gameScene.music?.destroy()
-      setLoading(true)
-      gameScene.cache.audio.events.on("add", (cache, key) => {
-        if (key === "music_" + name) {
-          playMusic(gameScene, name)
-          setLoading(false)
-        }
-      })
-      preloadMusic(gameScene, name)
-      gameScene.load.start()
+      const musicKey = "music_" + name
+      if (gameScene.cache.audio.exists(musicKey)) {
+        playMusic(gameScene, name)
+        setLoading(false)
+      } else {
+        setLoading(true)
+        gameScene.cache.audio.events.on("add", (cache, key) => {
+          if (key === musicKey) {
+            playMusic(gameScene, name)
+            setLoading(false)
+          }
+        })
+        preloadMusic(gameScene, name)
+        gameScene.load.start()
+      }
     }
   }
 
@@ -119,6 +131,14 @@ export default function Jukebox(props: {
           <img src="/assets/ui/randomize.svg" style={{ marginRight: 0 }} />
         </button>
       </div>
+
+      {credits ? (
+        <p className="credits">
+          {t("jukebox.music_credits")}: {credits}
+        </p>
+      ) : (
+        <></>
+      )}
 
       <p>
         <label className="full-width">

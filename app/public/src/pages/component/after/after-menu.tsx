@@ -2,10 +2,10 @@ import React from "react"
 import { useTranslation } from "react-i18next"
 import { Tooltip } from "react-tooltip"
 import { getRankLabel } from "../../../../../../app/types/strings/Strings"
-import { ExpPlace, SynergyTriggers } from "../../../../../config"
+import { ExpPlace, SynergyTiersThresholds } from "../../../../../config"
 import { computeElo } from "../../../../../core/elo"
-import { IAfterGamePlayer, Role } from "../../../../../types"
-import { Synergy } from "../../../../../types/enum/Synergy"
+import { type IAfterGamePlayer, Role } from "../../../../../types"
+import type { Synergy } from "../../../../../types/enum/Synergy"
 import { ItemDetailTooltip } from "../../../game/components/item-detail"
 import { useAppSelector } from "../../../hooks"
 import { addIconsToDescription } from "../../utils/descriptions"
@@ -134,7 +134,7 @@ export default function AfterMenu() {
                   </td>
                   <td>
                     <ul className="player-team-synergies">
-                      {player.synergies.filter(isNotIncomplete).map((s) => (
+                      {player.synergies.filter(isActive).map((s) => (
                         <React.Fragment key={s.name}>
                           <SynergyIcon type={s.name} />
                           <span>{s.value}</span>
@@ -154,8 +154,8 @@ export default function AfterMenu() {
   )
 }
 
-function isNotIncomplete(s: { name: Synergy; value: number }) {
-  return s.value >= SynergyTriggers[s.name][0]
+function isActive(s: { name: Synergy; value: number }) {
+  return s.value >= SynergyTiersThresholds[s.name][0]
 }
 
 function PlayerStatsTooltip({ player }: { player: IAfterGamePlayer }) {

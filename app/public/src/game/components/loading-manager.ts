@@ -1,16 +1,17 @@
 import { t } from "i18next"
-import Phaser, { GameObjects } from "phaser"
+import type Phaser from "phaser"
+import type { GameObjects } from "phaser"
 import pkg from "../../../../../package.json"
 import { RegionDetails } from "../../../../config"
+import { getMusicAlt } from "../../../../config/game/music"
 import type Player from "../../../../models/colyseus-models/player"
 import { getPkmWithCustom } from "../../../../models/colyseus-models/pokemon-customs"
-import { DungeonMusic, DungeonPMDO } from "../../../../types/enum/Dungeon"
+import { DungeonMusic, type DungeonPMDO } from "../../../../types/enum/Dungeon"
 import { PkmIndex } from "../../../../types/enum/Pokemon"
 import { getPortraitSrc } from "../../../../utils/avatar"
 import { schemaValues } from "../../../../utils/schemas"
 import atlas from "../../assets/atlas.json"
 import { preloadMusic } from "../../pages/utils/audio"
-import AnimatedTilesPlugin from "../plugins/animated-tiles-plugin"
 import GameScene from "../scenes/game-scene"
 import { loadCompressedAtlas } from "./pokemon"
 
@@ -37,12 +38,11 @@ export default class LoadingManager {
   async preload() {
     const scene = this.scene
     scene.load.xhr.timeout = 5000 // help avoiding failed loading of assets when server is overloaded
-
     scene.load.image("town_tileset", "/assets/tilesets/Town/tileset.png")
     scene.load.tilemapTiledJSON("town", "/assets/tilesets/Town/town.json")
-    preloadMusic(scene, DungeonMusic.TREASURE_TOWN_STAGE_0)
-    preloadMusic(scene, DungeonMusic.TREASURE_TOWN_STAGE_10)
-    preloadMusic(scene, DungeonMusic.TREASURE_TOWN_STAGE_20)
+    preloadMusic(scene, getMusicAlt(DungeonMusic.TREASURE_TOWN_STAGE_0))
+    preloadMusic(scene, getMusicAlt(DungeonMusic.TREASURE_TOWN_STAGE_10))
+    preloadMusic(scene, getMusicAlt(DungeonMusic.TREASURE_TOWN_STAGE_20))
     preloadMusic(scene, DungeonMusic.CARNIVAL_LUDICOLO)
 
     scene.load.image("rain", "/assets/environment/rain.png")
@@ -108,13 +108,6 @@ export default class LoadingManager {
 
     // load missingno as default pokemon texture if not found
     loadCompressedAtlas(scene, "0000")
-
-    scene.load.scenePlugin(
-      "animatedTiles",
-      AnimatedTilesPlugin,
-      "animatedTiles",
-      "animatedTiles"
-    )
   }
 }
 

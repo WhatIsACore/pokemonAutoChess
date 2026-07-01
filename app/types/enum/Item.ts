@@ -1,4 +1,4 @@
-import { reverseMap } from "../../utils/map"
+import { objToMap, reverseMap } from "../../utils/map"
 import { Ability } from "./Ability"
 import { Synergy } from "./Synergy"
 import { Weather } from "./Weather"
@@ -115,11 +115,11 @@ export enum Item {
   RARE_CANDY = "RARE_CANDY",
   EVIOLITE = "EVIOLITE",
   RED_SCALE = "RED_SCALE",
-  WHITE_FLUTE = "WHITE_FLUTE",
+  GOLD_MASK = "GOLD_MASK",
   GOLD_BOTTLE_CAP = "GOLD_BOTTLE_CAP",
   ABSORB_BULB = "ABSORB_BULB",
   SACRED_ASH = "SACRED_ASH",
-  COMET_SHARD = "COMET_SHARD",
+  STAR_PIECE = "STAR_PIECE",
   REPEAT_BALL = "REPEAT_BALL",
   GOLD_BOW = "GOLD_BOW",
   DAMP_ROCK = "DAMP_ROCK",
@@ -180,7 +180,7 @@ export enum Item {
   TM_PAYDAY = "TM_PAYDAY",
   TM_FOCUS_PUNCH = "TM_FOCUS_PUNCH",
   TM_HYPER_BEAM = "TM_HYPER_BEAM",
-  TM_PROTECT = "TM_PROTECT",
+  TM_SUBSTITUTE = "TM_SUBSTITUTE",
   TM_SKILL_SWAP = "TM_SKILL_SWAP",
   CHEF_HAT = "CHEF_HAT",
   PICNIC_SET = "PICNIC_SET",
@@ -330,7 +330,9 @@ export enum Item {
   ICY_FLUTE = "ICY_FLUTE",
   ROCK_HORN = "ROCK_HORN",
   SKY_MELODICA = "SKY_MELODICA",
-  TERRA_CYMBAL = "TERRA_CYMBAL"
+  TERRA_CYMBAL = "TERRA_CYMBAL",
+  SOOTHE_BELL = "SOOTHE_BELL",
+  BALL = "BALL"
 }
 
 export const MemoryDiscs = [
@@ -477,7 +479,8 @@ export const SpecialItems: Item[] = [
   Item.COMFEY,
   Item.TATSUGIRI_CURLY,
   Item.TATSUGIRI_DROOPY,
-  Item.TATSUGIRI_STRETCHY
+  Item.TATSUGIRI_STRETCHY,
+  Item.BALL
 ] satisfies Item[]
 
 export const FishingRods = [
@@ -653,11 +656,11 @@ export const ShinyItems = [
   Item.SHINY_STONE,
   Item.RARE_CANDY,
   Item.EVIOLITE,
-  Item.WHITE_FLUTE,
+  Item.GOLD_MASK,
   Item.GOLD_BOTTLE_CAP,
   Item.ABSORB_BULB,
   Item.SACRED_ASH,
-  Item.COMET_SHARD,
+  Item.STAR_PIECE,
   Item.REPEAT_BALL,
   Item.GOLD_BOW,
   Item.RED_SCALE
@@ -761,7 +764,10 @@ export const SynergyGemsBuried: SynergyGem[] = [
   Item.STEEL_GEM,
   Item.DRAGON_GEM,
   Item.POISON_GEM,
-  Item.GHOST_GEM
+  Item.GHOST_GEM,
+  Item.FIELD_GEM,
+  Item.GROUND_GEM,
+  Item.AMORPHOUS_GEM
 ] satisfies SynergyGem[]
 
 export const ToolsBuried: Tool[] = [
@@ -912,7 +918,7 @@ export const CraftableNoStonesOrScarves: Item[] =
     (item) => SynergyGivenByItem.hasOwnProperty(item) === false
   )
 
-export const Wands: Item[] = [
+export const Wands = [
   Item.BLAST_WAND,
   Item.HP_SWAP_WAND,
   Item.SPIRIT_WAND,
@@ -929,7 +935,7 @@ export const Wands: Item[] = [
   Item.SWITCHER_WAND,
   Item.WHIRLWIND_WAND,
   Item.TUNNEL_WAND
-]
+] satisfies Item[]
 
 export const OgerponMasks: Item[] = [
   Item.TEAL_MASK,
@@ -943,23 +949,23 @@ export const TMsBronze = [
   Item.TM_RETURN,
   Item.TM_COUNTER,
   Item.TM_DISABLE
-]
+] satisfies Item[]
 
 export const TMsSilver = [
   Item.TM_BULK_UP,
   Item.TM_CHARGE,
   Item.TM_REFLECT,
   Item.TM_PAYDAY
-]
+] satisfies Item[]
 
 export const TMsGold = [
   Item.TM_FOCUS_PUNCH,
   Item.TM_HYPER_BEAM,
-  Item.TM_PROTECT,
+  Item.TM_SUBSTITUTE,
   Item.TM_SKILL_SWAP
-]
+] satisfies Item[]
 
-export const TMs = [...TMsBronze, ...TMsSilver, ...TMsGold]
+export const TMs = [...TMsBronze, ...TMsSilver, ...TMsGold] satisfies Item[]
 
 export const AbilityPerTM: { [item in Item]?: Ability } = {
   [Item.TM_RAGE]: Ability.RAGE,
@@ -972,9 +978,13 @@ export const AbilityPerTM: { [item in Item]?: Ability } = {
   [Item.TM_PAYDAY]: Ability.PAYDAY,
   [Item.TM_FOCUS_PUNCH]: Ability.FOCUS_PUNCH,
   [Item.TM_HYPER_BEAM]: Ability.HYPER_BEAM,
-  [Item.TM_PROTECT]: Ability.PROTECT,
+  [Item.TM_SUBSTITUTE]: Ability.SUBSTITUTE,
   [Item.TM_SKILL_SWAP]: Ability.SKILL_SWAP
 }
+
+export const TMPerAbility = reverseMap(
+  objToMap(AbilityPerTM as Record<Item, Ability>)
+)
 
 export const Dishes = [
   Item.OLIVE_OIL,
@@ -1148,6 +1158,8 @@ export const UnholdableItems = [
   Item.RED_SCALE
 ] satisfies Item[]
 
+export type UnholdableItem = (typeof UnholdableItems)[number]
+
 export const ConsumableItems = [
   ...TMs,
   ...Dishes,
@@ -1164,7 +1176,8 @@ export const ConsumableItems = [
   Item.SCROLL_OF_DARKNESS,
   Item.SCROLL_OF_WATERS,
   Item.AUSPICIOUS_ARMOR,
-  Item.MALICIOUS_ARMOR
+  Item.MALICIOUS_ARMOR,
+  Item.SOOTHE_BELL
 ] satisfies Item[]
 
 export const RemovableItems = [
@@ -1174,3 +1187,11 @@ export const RemovableItems = [
   ...Scarves,
   ...MemoryDiscs
 ] satisfies Item[]
+
+export const UnholdableItemsToSaveForStats = [
+  Item.GIMMIGHOUL_COIN,
+  ...Wands,
+  ...SynergyGems,
+  ...SevenTreasures,
+  ...WeatherRocks
+] satisfies UnholdableItem[]

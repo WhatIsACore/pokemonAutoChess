@@ -5,20 +5,20 @@ import {
   MaxTroopersPerPkm
 } from "../../../../config"
 import { getAttackTimings } from "../../../../core/attacking-state"
-import { getMoveSpeed } from "../../../../core/pokemon-entity"
-import Simulation from "../../../../core/simulation"
-import Count from "../../../../models/colyseus-models/count"
-import Player from "../../../../models/colyseus-models/player"
+import { getMoveSpeed } from "../../../../core/move-speed"
+import type Simulation from "../../../../core/simulation"
+import type Count from "../../../../models/colyseus-models/count"
+import type Player from "../../../../models/colyseus-models/player"
 import { PokemonClasses } from "../../../../models/colyseus-models/pokemon"
-import Status from "../../../../models/colyseus-models/status"
+import type Status from "../../../../models/colyseus-models/status"
 import { getPokemonData } from "../../../../models/precomputed/precomputed-pokemon-data"
-import { IBoardEvent, IPokemonEntity } from "../../../../types"
+import type { IBoardEvent, IPokemonEntity } from "../../../../types"
 import { Ability } from "../../../../types/enum/Ability"
 import { EffectEnum } from "../../../../types/enum/Effect"
 import {
   AttackType,
   HealType,
-  Orientation,
+  type Orientation,
   PokemonActionState,
   PokemonTint,
   Stat
@@ -33,9 +33,9 @@ import { OrientationVector } from "../../../../utils/orientation"
 import { pickRandomIn } from "../../../../utils/random"
 import { GamePokemonDetailDOMWrapper } from "../../pages/component/game/game-pokemon-detail"
 import { transformEntityCoordinates } from "../../pages/utils/utils"
-import AnimationManager from "../animation-manager"
+import type AnimationManager from "../animation-manager"
 import { DEPTH } from "../depths"
-import GameScene from "../scenes/game-scene"
+import type GameScene from "../scenes/game-scene"
 import { displayAbility, displayHit } from "./abilities-animations"
 import PokemonSprite from "./pokemon"
 import {
@@ -126,10 +126,12 @@ export default class BattleManager {
         pokemon.name === Pkm.FALINKS_BRASS ||
         pokemon.passive === Passive.AVALUGG
       ) {
-        this.addTroopers(pokemon, pokemonUI, simulationId)
+        this.addTroopers(pokemon, pokemonUI, simulationId, playerId)
       }
       if (pokemon.action === PokemonActionState.BLOSSOM) {
         pokemonUI.blossomAnimation()
+      } else if (pokemon.action === PokemonActionState.NEST) {
+        pokemonUI.nestAnimation(true)
       } else {
         this.animationManager.animatePokemon(
           pokemonUI,
@@ -166,7 +168,11 @@ export default class BattleManager {
       this.pokemonSprites.has(pokemon.id)
     ) {
       const pokemonSprite = this.pokemonSprites.get(pokemon.id)!
-      if (pokemon.passive === Passive.INANIMATE && pokemon.hp > 0) {
+      if (
+        pokemon.passive === Passive.INANIMATE &&
+        (this.simulation.blueTeam.has(pokemon.id) ||
+          this.simulation.redTeam.has(pokemon.id))
+      ) {
         // pillar is thrown, skip death animation
         setTimeout(() => pokemonSprite.destroy(), 500)
       } else {
@@ -914,7 +920,6 @@ export default class BattleManager {
   }
 
   removeBoardEvent(event: IBoardEvent) {
-    //console.log("Removing board event", event)
     const index = event.y * BOARD_WIDTH + event.x
     if (event.effect === null) {
       // Clear all effects on this cell
@@ -1337,7 +1342,8 @@ export default class BattleManager {
   addTroopers(
     trooperChief: IPokemonEntity,
     trooperChiefSprite: PokemonSprite,
-    simulationId: string
+    simulationId: string,
+    playerId: string
   ) {
     const trooperName =
       trooperChief.name === Pkm.FALINKS_BRASS
@@ -1348,7 +1354,7 @@ export default class BattleManager {
     if (trooperName === null) return
 
     const troopersBenchSprites = [...this.scene.board!.pokemons.values()]
-      .filter((p) => p.name === trooperName && isOnBench(p))
+      .filter((p) => p.name === trooperName && isOnBench(p) && p.playerId === playerId)
       .slice(0, MaxTroopersPerPkm[trooperChief.name])
 
     if (trooperChiefSprite.troopers) {
@@ -1368,7 +1374,7 @@ export default class BattleManager {
         trooperChief.shiny,
         trooperChief.emotion
       )
-      trooperInBattle.maxHP = trooperInBattle.hp
+      trooperInBattle.postConstructor()
 
       const { dx, dy } = TroopersDeltaPositions[trooperName]?.(
         i,

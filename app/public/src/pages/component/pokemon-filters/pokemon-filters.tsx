@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
 import {
-  IPreferencesState,
-  PreferenceKey,
+  type IPreferencesState,
+  type PreferenceKey,
   usePreferences
 } from "../../../preferences"
 import { closeSiblingDetails } from "../../utils/toggle"
@@ -11,8 +11,8 @@ import { PkmAltForms } from "../../../../../config"
 import { getPokemonData } from "../../../../../models/precomputed/precomputed-pokemon-data"
 import { Ability } from "../../../../../types/enum/Ability"
 import { Rarity } from "../../../../../types/enum/Game"
-import { NonPkm, Pkm, PkmFamily } from "../../../../../types/enum/Pokemon"
-import { PoolType } from "../../../../../types/enum/PoolType"
+import { NonPkm, type Pkm, PkmFamily } from "../../../../../types/enum/Pokemon"
+import type { PoolType } from "../../../../../types/enum/PoolType"
 
 export function PokemonFilters() {
   const { t } = useTranslation()
@@ -79,11 +79,17 @@ export function PokemonFilters() {
 export function filterPokemonsAccordingToPreferences(
   pokemons: Pkm[],
   preferences: IPreferencesState,
-  includesNonPkm = false
+  includesNonPkm = false,
+  includesPkm = true
 ) {
   const data = pokemons.map((p) => getPokemonData(p))
   return pokemons.filter((p) => {
-    if (NonPkm.includes(p) && !includesNonPkm) return false
+    if (NonPkm.includes(p)) {
+      if (!includesNonPkm) return false
+    } else {
+      if (!includesPkm) return false
+    }
+
     const { additional, regional, rarity, skill, stars } = getPokemonData(p)
     if (skill === Ability.DEFAULT && !includesNonPkm) return false // pokemons with no ability are not ready
     const special = rarity === Rarity.SPECIAL

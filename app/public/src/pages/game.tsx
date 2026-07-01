@@ -1,4 +1,4 @@
-import { getStateCallbacks, Room } from "@colyseus/sdk"
+import { getStateCallbacks, type Room } from "@colyseus/sdk"
 import firebase from "firebase/compat/app"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -9,39 +9,39 @@ import {
   MinStageForGameToCount,
   RegionDetails
 } from "../../../config"
-import { IPokemonRecord } from "../../../models/colyseus-models/game-record"
-import { Wanderer } from "../../../models/colyseus-models/wanderer"
+import type { IPokemonRecord } from "../../../models/colyseus-models/game-record"
+import type { Wanderer } from "../../../models/colyseus-models/wanderer"
 import { PVEStages } from "../../../models/pve-stages"
-import AfterGameState from "../../../rooms/states/after-game-state"
-import GameState from "../../../rooms/states/game-state"
+import type AfterGameState from "../../../rooms/states/after-game-state"
+import type GameState from "../../../rooms/states/game-state"
 import {
-  IAfterGamePlayer,
-  IBoardEvent,
-  IDps,
-  IDragDropCombineMessage,
-  IDragDropItemMessage,
-  IDragDropMessage,
-  IExperienceManager,
-  IPlayer,
+  type IAfterGamePlayer,
+  type IBoardEvent,
+  type IDps,
+  type IDragDropCombineMessage,
+  type IDragDropItemMessage,
+  type IDragDropMessage,
+  type IExperienceManager,
+  type IPlayer,
   Role,
   Transfer
 } from "../../../types"
 import { CloseCodes, CloseCodesMessages } from "../../../types/enum/CloseCodes"
 import { ConnectionStatus } from "../../../types/enum/ConnectionStatus"
 import { GamePhaseState, Team } from "../../../types/enum/Game"
-import { Item } from "../../../types/enum/Item"
+import type { Item } from "../../../types/enum/Item"
 import { Passive } from "../../../types/enum/Passive"
-import { Pkm } from "../../../types/enum/Pokemon"
-import { Synergy } from "../../../types/enum/Synergy"
+import type { Pkm } from "../../../types/enum/Pokemon"
+import type { Synergy } from "../../../types/enum/Synergy"
 import { GameEvent } from "../../../types/events"
 import type { NonFunctionPropNames } from "../../../types/HelperTypes"
-import { DisplayText } from "../../../types/strings/DisplayText"
-import { ErrorMessage } from "../../../types/strings/ErrorMessage"
+import type { DisplayText } from "../../../types/strings/DisplayText"
+import type { ErrorMessage } from "../../../types/strings/ErrorMessage"
 import { getAvatarString } from "../../../utils/avatar"
 import { logger } from "../../../utils/logger"
 import { schemaValues } from "../../../utils/schemas"
 import GameContainer from "../game/game-container"
-import GameScene from "../game/scenes/game-scene"
+import type GameScene from "../game/scenes/game-scene"
 import {
   selectConnectedPlayer,
   selectSpectatedPlayer,
@@ -99,7 +99,10 @@ import { MainSidebar } from "./component/main-sidebar/main-sidebar"
 import { ConnectionStatusNotification } from "./component/system/connection-status-notification"
 import { playMusic, preloadMusic } from "./utils/audio"
 import { LocalStoreKeys, localStore } from "./utils/store"
-import { transformEntityCoordinates } from "./utils/utils"
+import {
+  transformBoardCoordinates,
+  transformEntityCoordinates
+} from "./utils/utils"
 
 let gameContainer: GameContainer
 
@@ -448,10 +451,12 @@ export default function Game() {
       room.onMessage(Transfer.LOADING_COMPLETE, () => {
         setLoaded(true)
       })
+
       room.onMessage(Transfer.FINAL_RANK, (finalRank) => {
         setFinalRank(finalRank)
         setFinalRankVisibility(FinalRankVisibility.VISIBLE)
       })
+
       room.onMessage(Transfer.PRELOAD_MAPS, async (maps) => {
         logger.info("preloading maps", maps)
         const gameScene = getGameScene()
@@ -469,6 +474,7 @@ export default function Game() {
             .start()
         }
       })
+
       room.onMessage(Transfer.SHOW_EMOTE, (message) => {
         const g = getGameScene()
         if (
@@ -483,6 +489,7 @@ export default function Game() {
           g.board.showEmote(message.id, message?.emote)
         }
       })
+
       room.onMessage(
         Transfer.COOK,
         async (message: { pokemonId: string; dishes: Item[] }) => {
@@ -585,12 +592,12 @@ export default function Game() {
         Transfer.DISPLAY_TEXT,
         (message: { text: DisplayText; id: string; x: number; y: number }) => {
           const g = getGameScene()
-          if (g?.battle?.simulation?.id === message.id && message.text) {
-            const coordinates = transformEntityCoordinates(
-              message.x,
-              message.y,
-              g?.battle?.flip
-            )
+          const isInBattle = g?.battle?.simulation?.id === message.id
+          if ((isInBattle || message.id === uid) && message.text) {
+            const flip = isInBattle && g?.battle?.flip === true
+            const coordinates = isInBattle
+              ? transformEntityCoordinates(message.x, message.y, flip)
+              : transformBoardCoordinates(message.x, message.y)
             gameContainer.gameScene?.board?.displayText(
               coordinates[0],
               coordinates[1],
@@ -984,7 +991,9 @@ export default function Game() {
           <GameChoice />
           <GameDpsMeter />
           <GameToasts />
-          {currentGameEvent === GameEvent.EXPEDITIONS && <GameExpeditions />}
+          {currentGameEvent === GameEvent.EXPEDITIONS && !spectate && (
+            <GameExpeditions />
+          )}
         </>
       ) : (
         <GameLoadingScreen connectError={connectError} />

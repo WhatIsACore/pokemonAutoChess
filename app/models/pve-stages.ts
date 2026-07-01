@@ -16,7 +16,7 @@ import {
   randomWeighted
 } from "../utils/random"
 import { schemaValues } from "../utils/schemas"
-import Player from "./colyseus-models/player"
+import type Player from "./colyseus-models/player"
 
 export type PVEStagesNames =
   | `pkm.${Pkm}`
@@ -168,7 +168,7 @@ export const PVEStages: { [turn: number]: PVEStage } = {
       [Stat.DEF]: 5,
       [Stat.SPE_DEF]: 5
     },
-    marowakItems: [[Item.COMET_SHARD], [Item.SACRED_ASH]],
+    marowakItems: [[Item.STAR_PIECE], [Item.SACRED_ASH]],
     rewards: ItemComponentsNoFossilOrScarf,
     getRewards(player: Player) {
       const componentsWeights = ItemComponentsNoFossilOrScarf.reduce((o, i) => {
