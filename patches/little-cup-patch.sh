@@ -13,21 +13,20 @@ sed -i '/"EVERYONE_IS_HERE": "Everyone is here !",/a\		"LITTLE_CUP": "★ Little
 sed -i '/"EVERYONE_IS_HERE": "All the additional picks are available immediately",/a\		"LITTLE_CUP": "No evolutions",' "$EN"
 
 # Block all evolutions when Little Cup is active
-ER="app/core/evolution-rules.ts"
+# (evolution logic was moved from core/evolution-rules.ts into core/evolution-logic/evolution-manager.ts)
+EM="app/core/evolution-logic/evolution-manager.ts"
 
-# Add SpecialGameRule import
-sed -i '/^import { logger } from "..\/utils\/logger"/a\import { SpecialGameRule } from "../types/enum/SpecialGameRule"' "$ER"
+# Add SpecialGameRule import (anchor on the Pkm import, which is stable)
+sed -i '/^import { Pkm } from "..\/..\/types\/enum\/Pokemon"/a\import { SpecialGameRule } from "../../types/enum/SpecialGameRule"' "$EM"
 
-# Early-return in tryEvolve if Little Cup is active
-sed -i '/tryEvolve(/,/): void | Pokemon {/ {
-  /): void | Pokemon {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP \&\& pokemon.name !== Pkm.EGG) return
-}' "$ER"
+# Early-return in tryEvolve if Little Cup is active (append after the tryEvolve signature)
+sed -i '/^  ): void | Pokemon {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP \&\& pokemon.name !== Pkm.EGG) return' "$EM"
 
 # Also block canEvolveIfGettingOne to prevent bench space bypass
-sed -i '/canEvolveIfGettingOne(pokemon: Pokemon, player: Player): boolean {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP) return false' "$ER"
+sed -i '/canEvolveIfGettingOne(pokemon: Pokemon, player: Player): boolean {/a\    if (player.specialGameRule === SpecialGameRule.LITTLE_CUP) return false' "$EM"
 
 # Hide evolution shine/shimmer in shop portraits when Little Cup is active
 PP="app/public/src/pages/component/game/game-pokemon-portrait.tsx"
-sed -i '/import { CountEvolutionRule } from "..\/..\/..\/..\/..\/core\/evolution-rules"/a\import { SpecialGameRule } from "../../../../../types/enum/SpecialGameRule"' "$PP"
+sed -i '/^import { EvolutionRuleType } from "..\/..\/..\/..\/..\/types\/EvolutionRules"/a\import { SpecialGameRule } from "../../../../../types/enum/SpecialGameRule"' "$PP"
 sed -i 's/const willEvolve =/const willEvolve = specialGameRule === SpecialGameRule.LITTLE_CUP ? false :/' "$PP"
 sed -i 's/const shouldShimmer =/const shouldShimmer = specialGameRule === SpecialGameRule.LITTLE_CUP ? false :/' "$PP"

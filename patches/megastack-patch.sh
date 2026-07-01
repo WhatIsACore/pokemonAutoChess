@@ -23,10 +23,10 @@ PE="app/core/pokemon-entity.ts"
 sed -i '1s|^|import { getMaxItemCount } from "./item-limits"\n|' "$PE"
 sed -i 's/this\.items\.size >= 3 ||/this.items.size >= getMaxItemCount(this.player?.specialGameRule) ||/' "$PE"
 
-# evolution-rules.ts — two occurrences
-ER="app/core/evolution-rules.ts"
-sed -i '1s|^|import { getMaxItemCount } from "./item-limits"\n|' "$ER"
-sed -i 's/pokemonEvolved\.items\.size >= 3/pokemonEvolved.items.size >= getMaxItemCount(player.specialGameRule)/g' "$ER"
+# count-evolution-handler.ts — two occurrences (evolution logic was moved here from evolution-rules.ts)
+CEH="app/core/evolution-logic/count-evolution-handler.ts"
+sed -i '1s|^|import { getMaxItemCount } from "../item-limits"\n|' "$CEH"
+sed -i 's/pokemonEvolved\.items\.size >= 3/pokemonEvolved.items.size >= getMaxItemCount(player.specialGameRule)/g' "$CEH"
 
 # effects/items.ts — three occurrences
 EI="app/core/effects/items.ts"
@@ -40,10 +40,8 @@ sed -i '1s|^|import { getMaxItemCount } from "../item-limits"\n|' "$EP"
 sed -i 's/p\.items\.size < 3/p.items.size < getMaxItemCount(entity.player?.specialGameRule)/' "$EP"
 sed -i 's/entity\.items\.size < 3/entity.items.size < getMaxItemCount(entity.player?.specialGameRule)/' "$EP"
 
-# abilities/abilities.ts — Thief ability
-AA="app/core/abilities/abilities.ts"
-sed -i '1s|^|import { getMaxItemCount } from "../item-limits"\n|' "$AA"
-sed -i 's/pokemon\.items\.size < 3/pokemon.items.size < getMaxItemCount(pokemon.player?.specialGameRule)/' "$AA"
+# abilities/abilities.ts — Thief ability: no longer needed. Thief moved to abilities/thief.ts and now
+# grants items via pokemon.addItem(), which is already governed by the patched pokemon-entity.ts guard.
 
 # simulation.ts — Wonder Box
 SM="app/core/simulation.ts"

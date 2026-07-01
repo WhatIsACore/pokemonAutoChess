@@ -23,11 +23,11 @@ PF="app/models/pokemon-factory.ts"
 sed -i '/^import { logger } from "..\/utils\/logger"/a\import { getShuffledSynergy } from "../core/synergy-shuffle"\nimport { SpecialGameRule } from "../types/enum/SpecialGameRule"' "$PF"
 
 # After pokemon creation, apply synergy shuffle if player has RANDOMIZER rule
-sed -i '/pokemon.maxHP = pokemon.hp/a\      if (custom && "roomSeed" in custom && custom.specialGameRule === SpecialGameRule.RANDOMIZER) {\n        const types = Array.from(pokemon.types.values())\n        pokemon.types.clear()\n        types.forEach(t => pokemon.types.add(getShuffledSynergy(custom.roomSeed, name, t)))\n      }' "$PF"
+sed -i '/pokemon.postConstructor()/a\      if (custom && "roomSeed" in custom && custom.specialGameRule === SpecialGameRule.RANDOMIZER) {\n        const types = Array.from(pokemon.types.values())\n        pokemon.types.clear()\n        types.forEach(t => pokemon.types.add(getShuffledSynergy(custom.roomSeed, name, t)))\n      }' "$PF"
 
-# Add synergy shuffle import to pokemon.ts
+# Add synergy shuffle + SpecialGameRule imports to pokemon.ts (anchor on the Synergy import, which is stable)
 PKM="app/models/colyseus-models/pokemon.ts"
-sed -i '/^import { entity, Schema, SetSchema, type } from "@colyseus\/schema"/a\import { getShuffledSynergy } from "../../core/synergy-shuffle"' "$PKM"
+sed -i '/^import { Synergy } from "..\/..\/types\/enum\/Synergy"/a\import { getShuffledSynergy } from "../../core/synergy-shuffle"\nimport { SpecialGameRule } from "../../types/enum/SpecialGameRule"' "$PKM"
 
 # Patch removeItems to use shuffled native types under Randomizer
 sed -i '/const nativeTypes = new PokemonClasses\[this.name\](this.name).types/c\    const _rawNativeTypes = new PokemonClasses[this.name](this.name).types\n    const nativeTypes = player.specialGameRule === SpecialGameRule.RANDOMIZER\n      ? new SetSchema<Synergy>(Array.from(_rawNativeTypes.values()).map(t => getShuffledSynergy(player.roomSeed, this.name, t)))\n      : _rawNativeTypes' "$PKM"
@@ -37,9 +37,9 @@ PE="app/core/pokemon-entity.ts"
 sed -i '/^import { getPokemonData } from "..\/models\/precomputed\/precomputed-pokemon-data"/a\import { getShuffledSynergy } from "./synergy-shuffle"' "$PE"
 sed -i 's/const default_types = getPokemonData(this.name).types/const _raw_default_types = getPokemonData(this.name).types\n    const default_types = this.player \&\& this.player.specialGameRule === SpecialGameRule.RANDOMIZER\n      ? _raw_default_types.map(t => getShuffledSynergy(this.player!.roomSeed, this.name, t))\n      : _raw_default_types/' "$PE"
 
-# Add synergy shuffle import to shop.ts
+# Add synergy shuffle import to shop.ts (getPokemonData import is now multi-line; anchor on the precomputed-rarity import instead)
 SH="app/models/shop.ts"
-sed -i '/^import { getPokemonData } from ".\/precomputed\/precomputed-pokemon-data"/a\import { getShuffledSynergy } from "../core/synergy-shuffle"' "$SH"
+sed -i '/^import { PRECOMPUTED_POKEMONS_PER_RARITY } from ".\/precomputed\/precomputed-rarity"/a\import { getShuffledSynergy } from "../core/synergy-shuffle"' "$SH"
 
 # Patch shop filterCandidates to use shuffled types for stage 10/20 propositions
 sed -i 's/const hasSynergyWanted =/const hasSynergyWanted = player.specialGameRule === SpecialGameRule.RANDOMIZER\n          ? synergyWanted === undefined || types.some(t => getShuffledSynergy(player.roomSeed, pkm, t) === synergyWanted)\n          :/' "$SH"
